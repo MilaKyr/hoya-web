@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Home page</title>
+    <link rel="stylesheet" type="text/css" href="../public/style.css">
+</head>
+<body>
+<h1>
+    <div class="box">
+        <img src="../public/img/Hoya_mindorensis.jpeg">
+        <span style="">Welcome to the webpage comparing prices of hoyas.</span>
+    </div>
+</h1>
+<div class="navbar">
+    <a href="/contact">Contact</a>
+</div>
+<h2> Currently, tracking {{ n_products }} from {{ n_shops }} shops! </h2>
+<form action="/search" method="post">
+    <input type="search" name="text" placeholder="Type the name here...">
+</form>
+<a href="/search_all" methods="get" class="btn btn-primary">Show me all</a>
+
+</body>
+</html>
