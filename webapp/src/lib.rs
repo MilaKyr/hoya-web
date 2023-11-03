@@ -66,7 +66,7 @@ async fn search(Form(text): Form<Search>) -> impl IntoResponse {
 }
 
 async fn search_all() -> impl IntoResponse {
-    Html(r#"Here would be list f all available hoyas!"#)
+    Html(r#"Here would be list of all available hoyas!"#)
 }
 
 pub fn create_app() -> Result<Router, Error> {
