@@ -1,0 +1,29 @@
+[package]
+name = "webapp"
+version = "0.1.0"
+edition = "2021"
+authors = ["Liudmyla Kyrashchuk <himila@tuta.io>"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+path = "src/main.rs"
+name = "webapp"
+
+[dependencies]
+config = "0.13.3"
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.4.0", features = ["fs", "trace"] }
+serde = "1.0.190"
+thiserror = "1.0.50"
+serde_json = "1.0.108"
+askama = "0.12.1"
+axum = "0.6.20"
+tokio = { version = "1.0", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+hyper = { version = "0.14", features = ["full"] }
