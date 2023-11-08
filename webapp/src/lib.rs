@@ -1,11 +1,12 @@
 mod app_state;
 pub mod configuration;
+mod data_models;
 pub mod errors;
 mod templates;
 
 use axum::extract::Path;
 use axum::http::StatusCode;
-use axum::response::{Html, IntoResponse, Redirect};
+use axum::response::{IntoResponse, Redirect};
 use axum::routing::get;
 use axum::routing::post;
 use axum::{Form, Router};
@@ -14,7 +15,10 @@ use tower_http::services::ServeDir;
 
 use crate::app_state::AppState;
 use crate::errors::Error;
-use crate::templates::{HomeTemplate, HoyaPageTemplate, HtmlTemplate};
+use crate::templates::{
+    AboutTemplate, ContactTemplate, HomeTemplate, HoyaPageTemplate, HtmlTemplate,
+    LicensingTemplate, ListTemplate, NotFoundTemplate, PrivacyPolicyTemplate,
+};
 
 #[derive(Debug, Deserialize)]
 struct Message {
@@ -23,9 +27,15 @@ struct Message {
     message: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+#[derive(Deserialize)]
 struct Search {
     text: String,
+}
+
+async fn handler_404() -> impl IntoResponse {
+    let template = NotFoundTemplate::default();
+    HtmlTemplate(template)
 }
 
 async fn health_check() -> impl IntoResponse {
@@ -38,10 +48,8 @@ async fn index() -> impl IntoResponse {
 }
 
 async fn contact() -> impl IntoResponse {
-    match std::fs::read_to_string("templates/contact.html") {
-        Ok(content) => Html(content),
-        Err(e) => Html(format!("Error : {}", e)),
-    }
+    let template = ContactTemplate::default();
+    HtmlTemplate(template)
 }
 
 async fn send_message(Form(message): Form<Message>) -> impl IntoResponse {
@@ -53,20 +61,33 @@ async fn send_message(Form(message): Form<Message>) -> impl IntoResponse {
 }
 
 async fn hoya_page(Path(_hoya_id): Path<u32>) -> impl IntoResponse {
-    let template = HoyaPageTemplate {
-        name: "Placeholder name".to_string(),
-        desc: "Placeholder desc".to_string(),
-    };
+    let template = HoyaPageTemplate::dummy();
     HtmlTemplate(template)
 }
 
-async fn search(Form(text): Form<Search>) -> impl IntoResponse {
-    let response = format!("<p>You want to search for {} </p>", text.text);
-    Html(response)
+async fn about() -> impl IntoResponse {
+    let template = AboutTemplate::default();
+    HtmlTemplate(template)
+}
+
+async fn privacy_policy() -> impl IntoResponse {
+    let template = PrivacyPolicyTemplate::default();
+    HtmlTemplate(template)
+}
+
+async fn licensing() -> impl IntoResponse {
+    let template = LicensingTemplate::default();
+    HtmlTemplate(template)
+}
+
+async fn search(Form(_text): Form<Search>) -> impl IntoResponse {
+    let template = ListTemplate::dummy();
+    HtmlTemplate(template)
 }
 
 async fn search_all() -> impl IntoResponse {
-    Html(r#"Here would be list of all available hoyas!"#)
+    let template = ListTemplate::dummy();
+    HtmlTemplate(template)
 }
 
 pub fn create_app() -> Result<Router, Error> {
@@ -76,10 +97,14 @@ pub fn create_app() -> Result<Router, Error> {
         .route("/", get(index))
         .route("/hoya/:hoya_id", get(hoya_page))
         .route("/send_message", post(send_message))
-        .route("/contact", get(contact))
         .route("/health_check", get(health_check))
         .route("/search", post(search))
         .route("/search_all", get(search_all))
-        .with_state(app_state);
+        .route("/contact", get(contact))
+        .route("/about", get(about))
+        .route("/licensing", get(licensing))
+        .route("/privacy_policy", get(privacy_policy))
+        .with_state(app_state)
+        .fallback(handler_404);
     Ok(app)
 }
