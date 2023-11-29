@@ -10,29 +10,25 @@ use std::time::Duration;
 use tokio::task::spawn_blocking;
 use url::Url;
 
+const REMOVE_WORDS: [&str; 3] = ["\u{a0}€", "€\u{a0}", "€"];
+const REPLACE_WORDS: [(&str, &str); 1] = [(",", ".")];
+const PRICE_DEFAULT: f32 = -9.99;
+
 fn clean_price(price: String) -> f32 {
-    price
-        .replace("\u{a0}€", "")
-        .replace("€\u{a0}", "")
-        .replace('€', "")
-        .replace(',', ".")
-        .parse::<f32>()
-        .unwrap_or(-10.99)
+    let mut cleaned_price = price;
+    for word in REMOVE_WORDS {
+        cleaned_price = cleaned_price.replace(word, "");
+    }
+    for (from, to) in REPLACE_WORDS {
+        cleaned_price = cleaned_price.replace(from, to);
+    }
+    cleaned_price.parse::<f32>().unwrap_or(PRICE_DEFAULT)
 }
 
 #[derive(Debug, Default, Copy, Clone)]
 pub struct Parser {}
 
 impl Parser {
-    pub fn find_proxy(proxies: &mut Vec<Proxy>) -> Result<Proxy, ParserError> {
-        let mut rng = rand::thread_rng();
-        proxies.shuffle(&mut rng);
-        match proxies.pop() {
-            Some(proxy) => Ok(proxy),
-            None => Err(ParserError::NoProxyAvailable),
-        }
-    }
-
     pub async fn parse(&self, db: &Database) -> Result<(Shop, Vec<HoyaPosition>), ParserError> {
         let shop = db.get_top_shop().ok_or(ParserError::NoShopsFound)?;
         let proxies = db.get_proxies();
@@ -52,44 +48,59 @@ impl Parser {
         let task: tokio::task::JoinHandle<Result<Vec<HoyaPosition>, ParserError>> =
             spawn_blocking(move || {
                 let mut proxies = proxies.clone();
-                if shop_rules.url_categories.is_empty() {
-                    return Self::parse_shop_no_categories(&shop, &mut proxies, &shop_rules);
+                let mut products = vec![];
+                for opt_category in &shop_rules.url_categories {
+                    let new_products =
+                        Self::parse_all_products(&shop, &mut proxies, &shop_rules, opt_category)?;
+                    products.extend(new_products);
                 }
-                Self::parse_shop_with_categories(&shop, &mut proxies, &shop_rules)
+                Ok(products)
             });
 
-        // match task.await? {
-        //     Ok(p) => {
-        //         println!("positions to be saved: {:?}", p);
-        //         db.save_hoya_positions(p);
-        //     }
-        //     Err(err) => {
-        //         println!("{:?}", err)
-        //     }
-        // };
-        // Ok(())
         task.await?
     }
 
-    pub fn create_client(proxy: Proxy) -> Result<Client, ParserError> {
-        let url_proxy = Url::from_str(&proxy.to_string())?;
-        let client = reqwest::blocking::Client::builder()
-            .redirect(Policy::limited(30))
-            .user_agent("User-Agent Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0")
-            .proxy(reqwest::Proxy::http(url_proxy.clone()).unwrap())
-            .build()?;
-        Ok(client)
+    pub fn parse_all_products(
+        shop: &Shop,
+        proxies: &mut Vec<Proxy>,
+        shop_rules: &ShopParsingRules,
+        category: &Option<String>,
+    ) -> Result<Vec<HoyaPosition>, ParserError> {
+        let mut all_positions = vec![];
+
+        let (page_positions, n_pages) =
+            Self::parse_first_page(shop, proxies, shop_rules, category)?;
+        all_positions.extend(page_positions);
+
+        if let Some(duration_to_sleep) = shop_rules.sleep_timeout_sec {
+            std::thread::sleep(
+                Duration::try_from(time::Duration::seconds(duration_to_sleep as i64)).unwrap(),
+            );
+        }
+
+        // parse all pages
+        for page_id in 2..=n_pages {
+            let page_positions = Self::parse_page(shop, proxies, shop_rules, page_id, category)?;
+            all_positions.extend(page_positions);
+
+            if let Some(duration_to_sleep) = shop_rules.sleep_timeout_sec {
+                std::thread::sleep(
+                    Duration::try_from(time::Duration::seconds(duration_to_sleep as i64)).unwrap(),
+                );
+            }
+        }
+        Ok(all_positions)
     }
 
     pub fn parse_first_page(
         shop: &Shop,
         proxies: &mut Vec<Proxy>,
         shop_rules: &ShopParsingRules,
-        category: Option<String>,
+        category: &Option<String>,
     ) -> Result<(Vec<HoyaPosition>, u32), ParserError> {
         let proxy = Self::find_proxy(proxies)?;
         let client = Self::create_client(proxy)?;
-        let parsing_url = shop_rules.get_shop_parsing_url(1, &category);
+        let parsing_url = shop_rules.get_shop_parsing_url(1, category);
         let response_text = client.get(parsing_url).send()?.text()?;
         let document = Html::parse_document(&response_text);
         let n_pages = Self::retrieve_page_count(shop_rules, &document)?;
@@ -102,72 +113,31 @@ impl Parser {
         proxies: &mut Vec<Proxy>,
         shop_rules: &ShopParsingRules,
         page_id: u32,
-        category: Option<String>,
+        category: &Option<String>,
     ) -> Result<Vec<HoyaPosition>, ParserError> {
         let proxy = Self::find_proxy(proxies)?;
         let client = Self::create_client(proxy)?;
-        let parsing_url = shop_rules.get_shop_parsing_url(page_id, &category);
+        let parsing_url = shop_rules.get_shop_parsing_url(page_id, category);
         let response_text = client.get(parsing_url).send()?.text()?;
         let document = Html::parse_document(&response_text);
         let positions = Self::parse_data(shop, shop_rules, &document)?;
         Ok(positions)
     }
 
-    pub fn parse_shop_no_categories(
-        shop: &Shop,
-        proxies: &mut Vec<Proxy>,
-        shop_rules: &ShopParsingRules,
-    ) -> Result<Vec<HoyaPosition>, ParserError> {
-        let mut all_positions = vec![];
-        let (page_positions, n_pages) = Self::parse_first_page(shop, proxies, shop_rules, None)?;
-        all_positions.extend(page_positions);
-
-        if let Some(duration_to_sleep) = shop_rules.sleep_timeout_sec {
-            std::thread::sleep(Duration::from_secs(duration_to_sleep));
-        }
-
-        for page_id in 2..=n_pages {
-            let page_positions = Self::parse_page(shop, proxies, shop_rules, page_id, None)?;
-            all_positions.extend(page_positions);
-
-            if let Some(duration_to_sleep) = shop_rules.sleep_timeout_sec {
-                std::thread::sleep(Duration::from_secs(duration_to_sleep));
-            }
-        }
-        Ok(all_positions)
+    pub fn find_proxy(proxies: &mut Vec<Proxy>) -> Result<Proxy, ParserError> {
+        let mut rng = rand::thread_rng();
+        proxies.shuffle(&mut rng);
+        proxies.pop().ok_or(ParserError::NoProxyAvailable)
     }
 
-    pub fn parse_shop_with_categories(
-        shop: &Shop,
-        proxies: &mut Vec<Proxy>,
-        shop_rules: &ShopParsingRules,
-    ) -> Result<Vec<HoyaPosition>, ParserError> {
-        let mut all_positions = vec![];
-        for category in shop_rules.url_categories.iter() {
-            let (page_positions, n_pages) =
-                Self::parse_first_page(shop, proxies, shop_rules, Some(category.clone()))?;
-            all_positions.extend(page_positions);
-
-            if let Some(duration_to_sleep) = shop_rules.sleep_timeout_sec {
-                std::thread::sleep(
-                    Duration::try_from(time::Duration::seconds(duration_to_sleep as i64)).unwrap(),
-                );
-            }
-
-            for page_id in 2..=n_pages {
-                let page_positions =
-                    Self::parse_page(shop, proxies, shop_rules, page_id, Some(category.clone()))?;
-                all_positions.extend(page_positions);
-
-                if let Some(duration_to_sleep) = shop_rules.sleep_timeout_sec {
-                    std::thread::sleep(
-                        Duration::try_from(time::Duration::seconds(duration_to_sleep as i64))
-                            .unwrap(),
-                    );
-                }
-            }
-        }
-        Ok(all_positions)
+    pub fn create_client(proxy: Proxy) -> Result<Client, ParserError> {
+        let url_proxy = Url::from_str(&proxy.to_string())?;
+        let client = reqwest::blocking::Client::builder()
+            .redirect(Policy::limited(30))
+            .user_agent("User-Agent Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0")
+            .proxy(reqwest::Proxy::http(url_proxy.clone()).unwrap())
+            .build()?;
+        Ok(client)
     }
 
     fn parse_data(
@@ -176,18 +146,37 @@ impl Parser {
         document: &Html,
     ) -> Result<Vec<HoyaPosition>, ParserError> {
         let mut products = vec![];
-        let table_selector = Selector::parse(&shop_rules.product_table_lookup).unwrap();
-        let prod_selector = Selector::parse(&shop_rules.product_lookup).unwrap();
-        let mut selected = document.select(&table_selector);
-        if let Some(table) = selected.next() {
+        let table_selector = Selector::parse(&shop_rules.product_table_lookup)
+            .map_err(|_| ParserError::CrawlerSelectorError)?;
+        let prod_selector = Selector::parse(&shop_rules.product_lookup)
+            .map_err(|_| ParserError::CrawlerSelectorError)?;
+        for table in document.select(&table_selector) {
             for product in table.select(&prod_selector) {
-                match Self::parse_product(shop, shop_rules, product) {
-                    Ok(hoya_position) => products.push(hoya_position),
-                    Err(err) => println!("Error while parsing a product {:?}", err),
-                };
+                let position = Self::parse_product(shop, shop_rules, product)?;
+                products.push(position);
             }
         }
         Ok(products)
+    }
+
+    pub fn select_data_point(
+        element: ElementRef,
+        selector_name: &str,
+        look_for_href: bool,
+    ) -> Result<String, ParserError> {
+        let selector =
+            Selector::parse(selector_name).map_err(|_| ParserError::CrawlerSelectorError)?;
+        element
+            .select(&selector)
+            .next()
+            .map(|elem| {
+                if look_for_href {
+                    let data = elem.attr("href").unwrap();
+                    return data.to_string();
+                }
+                elem.text().collect::<String>()
+            })
+            .ok_or(ParserError::CrawlerSelectorError)
     }
 
     pub fn parse_product(
@@ -195,41 +184,11 @@ impl Parser {
         shop_rules: &ShopParsingRules,
         product: ElementRef,
     ) -> Result<HoyaPosition, ParserError> {
-        let name = {
-            let name_selector = Selector::parse(&shop_rules.name_lookup)
-                .map_err(|_| ParserError::CrawlerSelectorError)?;
-            product
-                .select(&name_selector)
-                .next()
-                .map(|name| name.text().collect::<String>())
-                .ok_or(ParserError::CrawlerSelectorError)?
-        };
-        let price = {
-            let price_selector = Selector::parse(&shop_rules.price_lookup)
-                .map_err(|_| ParserError::CrawlerSelectorError)?;
-
-            let price = product
-                .select(&price_selector)
-                .next()
-                .map(|price| price.text().collect::<String>())
-                .ok_or(ParserError::CrawlerSelectorError)?;
-            clean_price(price)
-        };
-        let url = {
-            let url_selector = Selector::parse(&shop_rules.url_lookup)
-                .map_err(|_| ParserError::CrawlerSelectorError)?;
-            product
-                .select(&url_selector)
-                .next()
-                .map(|url_elem| {
-                    if shop_rules.look_for_href {
-                        let url = url_elem.attr("href").unwrap();
-                        return url.to_string();
-                    }
-                    url_elem.text().collect::<String>()
-                })
-                .ok_or(ParserError::CrawlerSelectorError)?
-        };
+        let name = Self::select_data_point(product, &shop_rules.name_lookup, false)?;
+        let price = Self::select_data_point(product, &shop_rules.price_lookup, false)?;
+        let price = clean_price(price);
+        let url =
+            Self::select_data_point(product, &shop_rules.url_lookup, shop_rules.look_for_href)?;
         Ok(HoyaPosition::new(shop.clone(), name, price, url))
     }
 
@@ -238,16 +197,13 @@ impl Parser {
         document: &Html,
     ) -> Result<u32, ParserError> {
         let mut max = 0;
-        if let Ok(selector) = Selector::parse(&shop_rules.max_page_lookup) {
-            for element in document.select(&selector) {
-                let num: String = element
-                    .text()
-                    .map(|s| String::from_str(s).unwrap())
-                    .collect();
-                if let Ok(number) = num.parse::<u32>() {
-                    if max < number {
-                        max = number;
-                    }
+        let selector = Selector::parse(&shop_rules.max_page_lookup)
+            .map_err(|_| ParserError::CrawlerSelectorError)?;
+        for element in document.select(&selector) {
+            let num = element.text().collect::<String>();
+            if let Ok(number) = num.parse::<u32>() {
+                if max < number {
+                    max = number;
                 }
             }
         }
@@ -300,6 +256,12 @@ mod tests {
     fn clean_price_point_startspaceeuro_works() {
         let price = clean_price("€\u{a0}10.11".to_string());
         assert!(price - 10.11 < f32::EPSILON);
+    }
+
+    #[test]
+    fn clean_price_fails() {
+        let price = clean_price("abc".to_string());
+        assert!(price - PRICE_DEFAULT < f32::EPSILON);
     }
 
     #[test]
@@ -363,6 +325,7 @@ mod tests {
     fn parse_product_href_works() {
         let shop = create_test_shop();
         let shop_rules = ShopParsingRules {
+            url_categories: vec![None],
             product_lookup: "div.products > div.product".to_string(),
             name_lookup: "span.product_name".to_string(),
             price_lookup: "div.price".to_string(),
@@ -409,6 +372,7 @@ mod tests {
     fn parse_product_div_works() {
         let shop = create_test_shop();
         let shop_rules = ShopParsingRules {
+            url_categories: vec![None],
             product_lookup: "div.products > div.product".to_string(),
             name_lookup: "span.product_name".to_string(),
             price_lookup: "div.price".to_string(),
@@ -454,6 +418,7 @@ mod tests {
     fn parse_data_works() {
         let shop = create_test_shop();
         let shop_rules = ShopParsingRules {
+            url_categories: vec![None],
             product_table_lookup: "div.products".to_string(),
             product_lookup: "div.products > div.product".to_string(),
             name_lookup: "span.product_name".to_string(),

@@ -65,7 +65,7 @@ impl ProxyManager {
         }
         for row in rows {
             let zipped_array = head.iter().zip(row.iter()).collect::<Vec<_>>();
-            result.push(Proxy::from_row(zipped_array));
+            result.push(Proxy::try_from(zipped_array)?);
         }
         Ok(())
     }
