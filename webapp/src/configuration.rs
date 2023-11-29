@@ -5,6 +5,7 @@ use std::env::var;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Settings {
     pub application: Application,
+    pub parsing_delay: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

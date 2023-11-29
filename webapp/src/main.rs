@@ -1,6 +1,8 @@
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::time::Duration;
+use tokio::time::MissedTickBehavior::Skip;
 use webapp::configuration::get_configuration;
 use webapp::create_app;
 use webapp::errors::Error;
@@ -18,7 +20,18 @@ async fn main() {
         configuration.application.port,
     )
     .expect("Failed to create socket address");
-    let app = create_app().expect("Failed to start server");
+
+    let (app, app_state) = create_app().expect("Failed to start server");
+    let mut interval = tokio::time::interval(Duration::from_secs(configuration.parsing_delay));
+    interval.set_missed_tick_behavior(Skip);
+    let task = tokio::task::spawn(async move {
+        loop {
+            interval.tick().await;
+            let _ = app_state.parse().await;
+            // TODO add to logging
+        }
+    });
+    task.await.expect("Failed to parse data");
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
