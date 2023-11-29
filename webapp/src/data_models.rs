@@ -41,10 +41,11 @@ impl Product {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum HoyaType {
     Cutting,
     Rooted,
+    Unk,
 }
 
 impl HoyaType {
@@ -62,6 +63,7 @@ impl std::fmt::Display for HoyaType {
         match self {
             HoyaType::Cutting => write!(f, "cutting"),
             HoyaType::Rooted => write!(f, "rooted plant"),
+            HoyaType::Unk => write!(f, "n/a"),
         }
     }
 }
@@ -86,7 +88,7 @@ impl Shop {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ShopListing {
     pub shop: Shop,
     pub category: String,
@@ -145,7 +147,7 @@ impl TryFrom<HoyaPosition> for ShopListing {
             shop: position.shop,
             category: "NA".to_string(), // TODO
             name: position.full_name.clone(),
-            prod_type: HoyaType::Cutting, // TODO
+            prod_type: HoyaType::Unk, // TODO
             url,
             price: position.price,
         })
@@ -170,32 +172,13 @@ pub struct ShopParsingRules {
 }
 
 impl ShopParsingRules {
-    pub fn get_price_lookups(&self) -> String {
-        self.price_lookup.clone()
-    }
-
-    pub fn get_shop_parsing_urls(&self, category: &str, n_pages: u32) -> Vec<String> {
-        let mut parsing_urls = vec![];
-        let mut parsing_url = self.parsing_url.clone();
-        parsing_url = parsing_url.replace(&UrlHolders::CategoryID.to_string(), category);
-        for page_number in 1..=n_pages {
-            let paged_parsing_url =
-                parsing_url.replace(&UrlHolders::PageID.to_string(), &page_number.to_string());
-            parsing_urls.push(paged_parsing_url);
-        }
-        parsing_urls
-    }
-
     pub fn get_shop_parsing_url(&self, page_number: u32, category: &Option<String>) -> String {
-        let parsing_url = self.parsing_url.clone();
-        match category {
-            None => parsing_url.replace(&UrlHolders::PageID.to_string(), &page_number.to_string()),
-            Some(cat) => {
-                let url_with_page =
-                    parsing_url.replace(&UrlHolders::PageID.to_string(), &page_number.to_string());
-                url_with_page.replace(&UrlHolders::CategoryID.to_string(), cat)
-            }
+        let mut url = self.parsing_url.clone();
+        url = url.replace(&UrlHolders::PageID.to_string(), &page_number.to_string());
+        if let Some(category) = category {
+            url = url.replace(&UrlHolders::CategoryID.to_string(), category);
         }
+        url
     }
 }
 
@@ -245,5 +228,130 @@ impl Proxy {
             }
         }
         Self { ip, port, https }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn url_holders_to_string_work() {
+        assert_eq!(
+            UrlHolders::CategoryID.to_string(),
+            "__CATEGORY_ID__".to_string()
+        );
+        assert_eq!(UrlHolders::PageID.to_string(), "__PAGE_ID__".to_string());
+    }
+
+    #[test]
+    fn hoya_type_to_string_work() {
+        assert_eq!(HoyaType::Cutting.to_string(), "cutting".to_string());
+        assert_eq!(HoyaType::Rooted.to_string(), "rooted plant".to_string());
+        assert_eq!(HoyaType::Unk.to_string(), "n/a".to_string());
+    }
+
+    #[test]
+    fn hoya_positions_equal() {
+        let shop = Shop::dummy();
+        let name = "test name";
+        let price = 1.99;
+        let url = "https://example.com";
+        let pos1 = HoyaPosition::new(shop.clone(), name.to_string(), price, url.to_string());
+        let pos2 = HoyaPosition::new(shop.clone(), name.to_string(), price, url.to_string());
+        assert_eq!(pos1, pos2);
+    }
+
+    #[test]
+    fn hoya_position_to_shop_listing_works() {
+        let shop = Shop::dummy();
+        let name = "test name";
+        let price = 1.99;
+        let url = "https://example.com";
+        let proper_url = Url::from_str(url).expect("Failed to convert string to url");
+        let position = HoyaPosition::new(shop.clone(), name.to_string(), price, url.to_string());
+        let result: ShopListing = position
+            .try_into()
+            .expect("Failed to convert to shop listing");
+        let expected_result = ShopListing {
+            shop,
+            category: "NA".to_string(),
+            name: name.to_string(),
+            prod_type: HoyaType::Unk,
+            url: proper_url,
+            price,
+        };
+        assert_eq!(result, expected_result);
+    }
+
+    #[test]
+    fn get_shop_parsing_url_page_and_category_works() {
+        let shop_parsing_rules = ShopParsingRules {
+            parsing_url: "https://example.com/products/__CATEGORY_ID__?page=__PAGE_ID__"
+                .to_string(),
+            ..Default::default()
+        };
+        let url = shop_parsing_rules.get_shop_parsing_url(2, &Some("category_1".to_string()));
+        let expected_url = "https://example.com/products/category_1?page=2".to_string();
+        assert_eq!(url, expected_url);
+    }
+
+    #[test]
+    fn get_shop_parsing_url_no_category_works() {
+        let shop_parsing_rules = ShopParsingRules {
+            parsing_url: "https://example.com/products/?page=__PAGE_ID__".to_string(),
+            ..Default::default()
+        };
+        let url = shop_parsing_rules.get_shop_parsing_url(2, &None);
+        let expected_url = "https://example.com/products/?page=2".to_string();
+        assert_eq!(url, expected_url);
+    }
+
+    #[test]
+    fn proxy_http_to_string_works() {
+        let proxy = Proxy {
+            ip: "127.0.0.1".to_string(),
+            port: 80,
+            https: false,
+        };
+        let proxy_url = proxy.to_string();
+        let expected_url = "http://127.0.0.1:80".to_string();
+        assert_eq!(proxy_url, expected_url);
+    }
+
+    #[test]
+    fn proxy_https_to_string_works() {
+        let proxy = Proxy {
+            ip: "127.0.0.1".to_string(),
+            port: 80,
+            https: true,
+        };
+        let proxy_url = proxy.to_string();
+        let expected_url = "https://127.0.0.1:80".to_string();
+        assert_eq!(proxy_url, expected_url);
+    }
+
+    #[test]
+    fn proxy_from_row_http_works() {
+        let proxy = Proxy::from_row(vec![
+            (&"IP Address".to_string(), &"127.0.0.1".to_string()),
+            (&"Port".to_string(), &"6464".to_string()),
+            (&"Https".to_string(), &"no".to_string()),
+        ]);
+        let proxy_url = proxy.to_string();
+        let expected_url = "http://127.0.0.1:6464".to_string();
+        assert_eq!(proxy_url, expected_url);
+    }
+
+    #[test]
+    fn proxy_from_row_https_works() {
+        let proxy = Proxy::from_row(vec![
+            (&"IP Address".to_string(), &"127.0.0.1".to_string()),
+            (&"Port".to_string(), &"6464".to_string()),
+            (&"Https".to_string(), &"yes".to_string()),
+        ]);
+        let proxy_url = proxy.to_string();
+        let expected_url = "https://127.0.0.1:6464".to_string();
+        assert_eq!(proxy_url, expected_url);
     }
 }

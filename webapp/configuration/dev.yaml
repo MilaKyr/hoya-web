@@ -1,5 +1,4 @@
 parsing_delay: 86400
-in_memory_source_file: "data.json"
 application:
   host: 127.0.0.1
   port: 8000
