@@ -15,8 +15,8 @@ name = "webapp"
 [dependencies]
 config = "0.13.3"
 tower = { version = "0.4", features = ["util"] }
-tower-http = { version = "0.4.0", features = ["fs", "trace"] }
-serde = "1.0.190"
+tower-http = { version = "0.4.4", features = ["fs", "trace"] }
+serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0.50"
 serde_json = "1.0.108"
 askama = "0.12.1"
@@ -25,7 +25,16 @@ tokio = { version = "1.0", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2.4.1"
-rand = "0.8.5"
+rand = { version = "0.8.5" , features = ["std_rng"]}
+sea-orm = { version = "0.12", features = [ "sqlx-sqlite", "runtime-tokio-native-tls", "macros" , "with-json"] }
+reqwest = {version = "0.11", features = ["blocking", "rustls-tls"]}
+scraper = "0.18.1"
+arc-swap = "1.6.0"
+time = "0.3.30"
+tempfile = "3.8.1"
+fantoccini = "0.19.3"
+thirtyfour = "0.31.0"
+
 
 [dev-dependencies]
 hyper = { version = "0.14", features = ["full"] }
