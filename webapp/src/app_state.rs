@@ -1,13 +1,13 @@
 use crate::db::in_memory::InMemoryDB;
 use crate::db::Database;
 use crate::errors::AppErrors;
-use crate::parser::positions_parser::Parser;
+use crate::parser::positions_parser::PositionsParser;
 use crate::parser::proxy_parser::ProxyManager;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct AppState {
-    pub positions_parser: Parser,
+    pub positions_parser: PositionsParser,
     pub proxy_parser: ProxyManager,
     pub db: Arc<Database>,
 }
@@ -15,7 +15,7 @@ pub struct AppState {
 impl AppState {
     pub fn init() -> Self {
         Self {
-            positions_parser: Parser::default(),
+            positions_parser: PositionsParser::default(),
             proxy_parser: ProxyManager::default(),
             db: Arc::new(Database::InMemory(InMemoryDB::init())),
         }

@@ -5,6 +5,7 @@ use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
+use std::time::Duration;
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -172,6 +173,15 @@ impl ShopParsingRules {
         }
         url
     }
+
+    pub fn sleep(&self) -> Result<(), time::error::ConversionRange> {
+        if let Some(duration_to_sleep) = self.sleep_timeout_sec {
+            std::thread::sleep(Duration::try_from(time::Duration::seconds(
+                duration_to_sleep as i64,
+            ))?);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
@@ -212,14 +222,11 @@ impl TryFrom<Vec<(&String, &String)>> for Proxy {
     fn try_from(row: Vec<(&String, &String)>) -> Result<Self, Self::Error> {
         let (mut ip, mut port, mut https) = (None, None, None);
         for (name, value) in row.into_iter() {
-            if name == "IP Address" {
-                ip = Some(value.to_string());
-            }
-            if name == "Port" {
-                port = value.parse::<u16>().ok();
-            }
-            if name == "Https" {
-                https = Some(value == "yes");
+            match name.as_str() {
+                "IP Address" => ip = Some(value.to_string()),
+                "Port" => port = value.parse::<u16>().ok(),
+                "Https" => https = Some(value == "yes"),
+                _ => {}
             }
         }
         Ok(Self {

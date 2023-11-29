@@ -1,14 +1,10 @@
 use crate::data_models::{HoyaPosition, Proxy, Shop, ShopParsingRules};
 use crate::db::Database;
 use crate::parser::errors::ParserError;
+use crate::parser::traits::Parser;
 use rand::seq::SliceRandom;
-use reqwest::blocking::Client;
-use reqwest::redirect::Policy;
 use scraper::{ElementRef, Html, Selector};
-use std::str::FromStr;
-use std::time::Duration;
 use tokio::task::spawn_blocking;
-use url::Url;
 
 const REMOVE_WORDS: [&str; 3] = ["\u{a0}€", "€\u{a0}", "€"];
 const REPLACE_WORDS: [(&str, &str); 1] = [(",", ".")];
@@ -26,9 +22,11 @@ fn clean_price(price: String) -> f32 {
 }
 
 #[derive(Debug, Default, Copy, Clone)]
-pub struct Parser {}
+pub struct PositionsParser {}
 
-impl Parser {
+impl Parser for PositionsParser {}
+
+impl PositionsParser {
     pub async fn parse(&self, db: &Database) -> Result<(Shop, Vec<HoyaPosition>), ParserError> {
         let shop = db.get_top_shop().ok_or(ParserError::NoShopsFound)?;
         let proxies = db.get_proxies();
@@ -68,76 +66,43 @@ impl Parser {
     ) -> Result<Vec<HoyaPosition>, ParserError> {
         let mut all_positions = vec![];
 
-        let (page_positions, n_pages) =
-            Self::parse_first_page(shop, proxies, shop_rules, category)?;
+        let (page_positions, n_pages) = Self::parse_page(shop, proxies, shop_rules, category, 1)?;
         all_positions.extend(page_positions);
 
-        if let Some(duration_to_sleep) = shop_rules.sleep_timeout_sec {
-            std::thread::sleep(
-                Duration::try_from(time::Duration::seconds(duration_to_sleep as i64)).unwrap(),
-            );
-        }
-
-        // parse all pages
+        // parse rest of the pages
         for page_id in 2..=n_pages {
-            let page_positions = Self::parse_page(shop, proxies, shop_rules, page_id, category)?;
+            shop_rules.sleep()?;
+            let (page_positions, _) =
+                Self::parse_page(shop, proxies, shop_rules, category, page_id)?;
             all_positions.extend(page_positions);
-
-            if let Some(duration_to_sleep) = shop_rules.sleep_timeout_sec {
-                std::thread::sleep(
-                    Duration::try_from(time::Duration::seconds(duration_to_sleep as i64)).unwrap(),
-                );
-            }
         }
         Ok(all_positions)
-    }
-
-    pub fn parse_first_page(
-        shop: &Shop,
-        proxies: &mut Vec<Proxy>,
-        shop_rules: &ShopParsingRules,
-        category: &Option<String>,
-    ) -> Result<(Vec<HoyaPosition>, u32), ParserError> {
-        let proxy = Self::find_proxy(proxies)?;
-        let client = Self::create_client(proxy)?;
-        let parsing_url = shop_rules.get_shop_parsing_url(1, category);
-        let response_text = client.get(parsing_url).send()?.text()?;
-        let document = Html::parse_document(&response_text);
-        let n_pages = Self::retrieve_page_count(shop_rules, &document)?;
-        let positions = Self::parse_data(shop, shop_rules, &document)?;
-        Ok((positions, n_pages))
     }
 
     pub fn parse_page(
         shop: &Shop,
         proxies: &mut Vec<Proxy>,
         shop_rules: &ShopParsingRules,
-        page_id: u32,
         category: &Option<String>,
-    ) -> Result<Vec<HoyaPosition>, ParserError> {
-        let proxy = Self::find_proxy(proxies)?;
+        page_id: u32,
+    ) -> Result<(Vec<HoyaPosition>, u32), ParserError> {
+        let proxy = Self::find_proxy(proxies).ok();
         let client = Self::create_client(proxy)?;
         let parsing_url = shop_rules.get_shop_parsing_url(page_id, category);
         let response_text = client.get(parsing_url).send()?.text()?;
         let document = Html::parse_document(&response_text);
+        let mut n_pages = 0;
+        if page_id == 1 {
+            n_pages = Self::retrieve_page_count(shop_rules, &document)?
+        };
         let positions = Self::parse_data(shop, shop_rules, &document)?;
-        Ok(positions)
+        Ok((positions, n_pages))
     }
 
     pub fn find_proxy(proxies: &mut Vec<Proxy>) -> Result<Proxy, ParserError> {
         let mut rng = rand::thread_rng();
         proxies.shuffle(&mut rng);
         proxies.pop().ok_or(ParserError::NoProxyAvailable)
-    }
-
-    pub fn create_client(proxy: Proxy) -> Result<Client, ParserError> {
-        let url_proxy = Url::from_str(&proxy.to_string())?;
-        let client = reqwest::blocking::Client::builder()
-            .redirect(Policy::limited(30))
-            .user_agent("User-Agent Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0")
-            .proxy(reqwest::Proxy::http(url_proxy.clone()).unwrap())
-            .build()?;
-        Ok(client)
     }
 
     fn parse_data(
@@ -157,26 +122,6 @@ impl Parser {
             }
         }
         Ok(products)
-    }
-
-    pub fn select_data_point(
-        element: ElementRef,
-        selector_name: &str,
-        look_for_href: bool,
-    ) -> Result<String, ParserError> {
-        let selector =
-            Selector::parse(selector_name).map_err(|_| ParserError::CrawlerSelectorError)?;
-        element
-            .select(&selector)
-            .next()
-            .map(|elem| {
-                if look_for_href {
-                    let data = elem.attr("href").unwrap();
-                    return data.to_string();
-                }
-                elem.text().collect::<String>()
-            })
-            .ok_or(ParserError::CrawlerSelectorError)
     }
 
     pub fn parse_product(
@@ -200,7 +145,7 @@ impl Parser {
         let selector = Selector::parse(&shop_rules.max_page_lookup)
             .map_err(|_| ParserError::CrawlerSelectorError)?;
         for element in document.select(&selector) {
-            let num = element.text().collect::<String>();
+            let num = Self::clean_data_point(element);
             if let Ok(number) = num.parse::<u32>() {
                 if max < number {
                     max = number;
@@ -275,7 +220,8 @@ mod tests {
         let mut proxies = org_proxies.clone();
         let mut seen = vec![];
         for _ in 0..proxies.len() {
-            let parser = Parser::find_proxy(&mut proxies).expect(&format!("Failed to find proxy"));
+            let parser =
+                PositionsParser::find_proxy(&mut proxies).expect(&format!("Failed to find proxy"));
             seen.push(parser);
         }
         assert!(proxies.is_empty());
@@ -288,7 +234,7 @@ mod tests {
     #[test]
     fn find_proxy_fails() {
         let mut proxies: Vec<_> = vec![];
-        let res = Parser::find_proxy(&mut proxies);
+        let res = PositionsParser::find_proxy(&mut proxies);
         assert!(res.is_err());
     }
 
@@ -316,7 +262,7 @@ mod tests {
             max_page_lookup: "li".to_string(),
             ..Default::default()
         };
-        let max_page = Parser::retrieve_page_count(&shop_rules, &html);
+        let max_page = PositionsParser::retrieve_page_count(&shop_rules, &html);
         assert!(max_page.is_ok());
         assert_eq!(max_page.unwrap(), 3);
     }
@@ -357,7 +303,7 @@ mod tests {
             .select(&Selector::parse(&shop_rules.product_lookup).unwrap())
             .next();
         assert!(element.is_some());
-        let result = Parser::parse_product(&shop, &shop_rules, element.unwrap());
+        let result = PositionsParser::parse_product(&shop, &shop_rules, element.unwrap());
         let expected_position = HoyaPosition::new(
             shop.clone(),
             "Test name".to_string(),
@@ -403,7 +349,7 @@ mod tests {
             .select(&Selector::parse(&shop_rules.product_lookup).unwrap())
             .next();
         assert!(element.is_some());
-        let result = Parser::parse_product(&shop, &shop_rules, element.unwrap());
+        let result = PositionsParser::parse_product(&shop, &shop_rules, element.unwrap());
         let expected_position = HoyaPosition::new(
             shop.clone(),
             "Test name".to_string(),
@@ -445,7 +391,7 @@ mod tests {
         </html>
         "#,
         );
-        let result = Parser::parse_data(&shop, &shop_rules, &html);
+        let result = PositionsParser::parse_data(&shop, &shop_rules, &html);
         let expected_position = vec![HoyaPosition::new(
             shop.clone(),
             "Test name".to_string(),

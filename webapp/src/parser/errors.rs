@@ -22,4 +22,6 @@ pub enum ParserError {
     NoShopsFound,
     #[error("not a proper proxy")]
     NotAProxyRow,
+    #[error("time conversion error")]
+    TimeConversionError(#[from] time::error::ConversionRange),
 }

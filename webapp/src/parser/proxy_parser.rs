@@ -1,12 +1,15 @@
 use crate::data_models::{Proxy, ProxyParsingRules};
 use crate::db::Database;
 use crate::parser::errors::ParserError;
+use crate::parser::traits::Parser;
 use scraper::{Html, Selector};
 use tokio::task::spawn_blocking;
 use url::Url;
 
 #[derive(Debug, Default, Clone)]
 pub struct ProxyManager {}
+
+impl Parser for ProxyManager {}
 
 impl ProxyManager {
     pub async fn update(&self, db: &Database) -> Result<(), ParserError> {
@@ -29,7 +32,7 @@ impl ProxyManager {
         rules: ProxyParsingRules,
         result: &mut Vec<Proxy>,
     ) -> Result<(), ParserError> {
-        let text = reqwest::blocking::get(url)?.text()?;
+        let text = Self::create_client(None)?.get(url).send()?.text()?;
         let document = Html::parse_document(&text);
         let table_selector =
             Selector::parse(&rules.table_lookup).map_err(|_| ParserError::CrawlerSelectorError)?;
@@ -44,19 +47,15 @@ impl ProxyManager {
             .next()
             .ok_or(ParserError::FailedToFindProxyTable)?;
         let mut head: Vec<String> = vec![];
-        let head_elements_selected = table.select(&head_elements_selector);
-        for head_element in head_elements_selected {
-            let mut element = head_element.text().collect::<Vec<_>>().join(" ");
-            element = element.trim().replace('\n', " ");
+        for head_element in table.select(&head_elements_selector) {
+            let element = Self::clean_data_point(head_element);
             head.push(element);
         }
         let mut rows: Vec<Vec<String>> = vec![];
-        let row_elements = table.select(&row_elements_selector);
-        for row_element in row_elements {
+        for row_element in table.select(&row_elements_selector) {
             let mut row = vec![];
             for td_element in row_element.select(&row_element_data_selector) {
-                let mut element = td_element.text().collect::<Vec<_>>().join(" ");
-                element = element.trim().replace('\n', " ");
+                let element = Self::clean_data_point(td_element);
                 row.push(element);
             }
             if !row.is_empty() {
