@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct AppState {
-    pub parser: Parser,
+    pub positions_parser: Parser,
     pub proxy_parser: ProxyManager,
     pub db: Arc<Database>,
 }
@@ -15,7 +15,7 @@ pub struct AppState {
 impl AppState {
     pub fn init() -> Self {
         Self {
-            parser: Parser {},
+            positions_parser: Parser::default(),
             proxy_parser: ProxyManager::default(),
             db: Arc::new(Database::InMemory(InMemoryDB::init())),
         }
@@ -23,7 +23,7 @@ impl AppState {
 
     pub async fn parse(&self) -> Result<(), AppErrors> {
         self.proxy_parser.update(&self.db).await?;
-        let (_shop, _hoya_positions) = self.parser.parse(&self.db).await?;
+        let (_shop, _hoya_positions) = self.positions_parser.parse(&self.db).await?;
         Ok(())
     }
 

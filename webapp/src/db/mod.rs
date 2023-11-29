@@ -1,9 +1,10 @@
-use crate::data_models::{Proxy, ProxyParsingRules, Shop, ShopParsingRules};
-use crate::db::in_memory::{HoyaPosition, InMemoryDB};
+use crate::data_models::{HoyaPosition, Proxy, ProxyParsingRules, Shop, ShopParsingRules};
+use crate::db::in_memory::InMemoryDB;
 use std::collections::HashMap;
 use url::Url;
 
 pub mod in_memory;
+mod map_json_as_pairs;
 
 #[derive(Debug)]
 pub enum Database {

@@ -1,5 +1,4 @@
-use crate::data_models::{Proxy, Shop, ShopParsingRules};
-use crate::db::in_memory::HoyaPosition;
+use crate::data_models::{HoyaPosition, Proxy, Shop, ShopParsingRules};
 use crate::db::Database;
 use crate::parser::errors::ParserError;
 use rand::seq::SliceRandom;
@@ -21,7 +20,7 @@ fn clean_price(price: String) -> f32 {
         .unwrap_or(-10.99)
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct Parser {}
 
 impl Parser {
@@ -208,7 +207,7 @@ impl Parser {
                 .ok_or(ParserError::CrawlerSelectorError)?
         };
         let price = {
-            let price_selector = Selector::parse(&shop_rules.price_lookups)
+            let price_selector = Selector::parse(&shop_rules.price_lookup)
                 .map_err(|_| ParserError::CrawlerSelectorError)?;
 
             let price = product
@@ -368,7 +367,7 @@ mod tests {
         let shop_rules = ShopParsingRules {
             product_lookup: "div.products > div.product".to_string(),
             name_lookup: "span.product_name".to_string(),
-            price_lookups: "div.price".to_string(),
+            price_lookup: "div.price".to_string(),
             url_lookup: "a".to_string(),
             look_for_href: true,
             ..Default::default()
@@ -414,7 +413,7 @@ mod tests {
         let shop_rules = ShopParsingRules {
             product_lookup: "div.products > div.product".to_string(),
             name_lookup: "span.product_name".to_string(),
-            price_lookups: "div.price".to_string(),
+            price_lookup: "div.price".to_string(),
             url_lookup: "div.url".to_string(),
             ..Default::default()
         };
@@ -460,7 +459,7 @@ mod tests {
             product_table_lookup: "div.products".to_string(),
             product_lookup: "div.products > div.product".to_string(),
             name_lookup: "span.product_name".to_string(),
-            price_lookups: "div.price".to_string(),
+            price_lookup: "div.price".to_string(),
             url_lookup: "div.url".to_string(),
             ..Default::default()
         };

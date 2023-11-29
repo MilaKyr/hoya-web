@@ -1,3 +1,4 @@
+use crate::errors::AppErrors;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
@@ -65,40 +66,6 @@ impl std::fmt::Display for HoyaType {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum HoyaSize {
-    Small,
-    Medium,
-    Large,
-    Unk,
-}
-
-impl HoyaSize {
-    fn dummy() -> Self {
-        let mut rng = thread_rng();
-        let prob: f32 = rng.gen_range(0.0..1.0);
-        if prob < 0.3 {
-            Self::Small
-        } else if prob < 0.5 {
-            Self::Medium
-        } else if prob < 0.7 {
-            Self::Large
-        } else {
-            Self::Unk
-        }
-    }
-}
-impl std::fmt::Display for HoyaSize {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            HoyaSize::Small => write!(f, "small"),
-            HoyaSize::Medium => write!(f, "medium"),
-            HoyaSize::Large => write!(f, "large"),
-            HoyaSize::Unk => write!(f, "Not available"),
-        }
-    }
-}
-
 #[derive(Debug, Default, Clone, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct Shop {
     pub logo_path: String,
@@ -122,8 +89,9 @@ impl Shop {
 #[derive(Debug, Clone)]
 pub struct ShopListing {
     pub shop: Shop,
+    pub category: String,
+    pub name: String,
     pub prod_type: HoyaType,
-    pub size: HoyaSize,
     pub url: Url,
     pub price: f32,
 }
@@ -133,11 +101,54 @@ impl ShopListing {
         let mut rng = thread_rng();
         Self {
             shop: Shop::dummy(),
+            category: "category".to_string(),
+            name: "test name".to_string(),
             prod_type: HoyaType::dummy(),
-            size: HoyaSize::dummy(),
             url: Url::from_str("https://example.com").unwrap(),
             price: rng.gen_range(10.0..100.00),
         }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HoyaPosition {
+    pub shop: Shop,
+    pub full_name: String,
+    pub price: f32,
+    pub url: String,
+}
+
+impl PartialEq for HoyaPosition {
+    fn eq(&self, other: &Self) -> bool {
+        self.shop == other.shop
+            && self.full_name == other.full_name
+            && (self.price - other.price).abs() < f32::EPSILON
+            && self.url == other.url
+    }
+}
+impl HoyaPosition {
+    pub fn new(shop: Shop, full_name: String, price: f32, url: String) -> Self {
+        Self {
+            shop,
+            full_name,
+            price,
+            url,
+        }
+    }
+}
+
+impl TryFrom<HoyaPosition> for ShopListing {
+    type Error = AppErrors;
+    fn try_from(position: HoyaPosition) -> Result<Self, Self::Error> {
+        let url = Url::from_str(&position.url)?;
+        Ok(ShopListing {
+            shop: position.shop,
+            category: "NA".to_string(), // TODO
+            name: position.full_name.clone(),
+            prod_type: HoyaType::Cutting, // TODO
+            url,
+            price: position.price,
+        })
     }
 }
 
@@ -150,7 +161,7 @@ pub struct ShopParsingRules {
     pub product_table_lookup: String,
     pub product_lookup: String,
     pub name_lookup: String,
-    pub price_lookups: String,
+    pub price_lookup: String,
     pub url_lookup: String,
     #[serde(default)]
     pub look_for_href: bool,
@@ -160,7 +171,7 @@ pub struct ShopParsingRules {
 
 impl ShopParsingRules {
     pub fn get_price_lookups(&self) -> String {
-        self.price_lookups.clone()
+        self.price_lookup.clone()
     }
 
     pub fn get_shop_parsing_urls(&self, category: &str, n_pages: u32) -> Vec<String> {

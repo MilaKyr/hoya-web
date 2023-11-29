@@ -20,8 +20,6 @@ pub enum ParserError {
     ProxyParsingRulesError,
     #[error("io error: {0}")]
     IOError(#[from] std::io::Error),
-    #[error(transparent)]
-    CmdError(#[from] fantoccini::error::CmdError),
     #[error("url parsing error {0}")]
     UrlParsingError(#[from] url::ParseError),
     #[error("time duration error")]
