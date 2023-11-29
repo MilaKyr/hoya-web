@@ -36,13 +36,11 @@ impl Parser {
     pub async fn parse(&self, db: &Database) -> Result<(Shop, Vec<HoyaPosition>), ParserError> {
         let shop = db.get_top_shop().ok_or(ParserError::NoShopsFound)?;
         let proxies = db.get_proxies();
-        if let Some(shop_rules) = db.get_shop_parsing_rules(&shop) {
-            let positions = self
-                .parse_shop(shop.clone(), shop_rules.clone(), proxies)
-                .await?;
-            return Ok((shop, positions));
-        }
-        Err(ParserError::FailedTOFindShops)
+        let shop_rules = db
+            .get_shop_parsing_rules(&shop)
+            .ok_or(ParserError::FailedToFindShopsRules(shop.name.to_string()))?;
+        let positions = self.parse_shop(shop.clone(), shop_rules, proxies).await?;
+        Ok((shop, positions))
     }
 
     pub async fn parse_shop(
@@ -182,7 +180,7 @@ impl Parser {
         let prod_selector = Selector::parse(&shop_rules.product_lookup).unwrap();
         let mut selected = document.select(&table_selector);
         if let Some(table) = selected.next() {
-            if let Some(product) = table.select(&prod_selector).next() {
+            for product in table.select(&prod_selector) {
                 match Self::parse_product(shop, shop_rules, product) {
                     Ok(hoya_position) => products.push(hoya_position),
                     Err(err) => println!("Error while parsing a product {:?}", err),

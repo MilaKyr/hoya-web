@@ -4,9 +4,9 @@ use thiserror::Error;
 pub enum ParserError {
     #[error("no proxy found")]
     NoProxyAvailable,
-    #[error("failed to build reqwest client")]
+    #[error("failed to build reqwest client: {0}")]
     FailedClient(#[from] reqwest::Error),
-    #[error("time outed request")]
+    #[error("request timeout")]
     RequestTimeOut,
     #[error("scrapper selector error")]
     CrawlerSelectorError,
@@ -22,10 +22,10 @@ pub enum ParserError {
     IOError(#[from] std::io::Error),
     #[error("url parsing error {0}")]
     UrlParsingError(#[from] url::ParseError),
-    #[error("time duration error")]
+    #[error("time duration error: {0}")]
     TimeDurationConversionRange(#[from] time::error::ConversionRange),
-    #[error("no shops available")]
-    FailedTOFindShops,
+    #[error("no shops rules available for {0}")]
+    FailedToFindShopsRules(String),
     #[error("failed to find any shop")]
     NoShopsFound,
 }

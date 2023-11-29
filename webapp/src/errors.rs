@@ -17,7 +17,7 @@ pub enum Error {
 #[derive(Error, Debug)]
 pub enum AppErrors {
     #[error("failed parsing with: {0}")]
-    ParsingError(#[from] ParserError),
+    ParserError(#[from] ParserError),
     #[error("failed to parse string as url: {0}")]
-    UrlParserError(#[from] url::ParseError),
+    UrlParseError(#[from] url::ParseError),
 }

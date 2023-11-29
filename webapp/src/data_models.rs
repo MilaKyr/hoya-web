@@ -217,15 +217,13 @@ impl Proxy {
         let mut port = 80;
         let mut https = false;
         for (name, value) in row.into_iter() {
-            if name == &"IP Address".to_string() {
+            if name == "IP Address" {
                 ip = value.to_string();
             }
-            if name == &"Port".to_string() {
+            if name == "Port" {
                 port = value.parse::<u16>().unwrap();
             }
-            if name == &"Https".to_string() && value == &"yes".to_string() {
-                https = true;
-            }
+            https = name == "Https" && value == "yes";
         }
         Self { ip, port, https }
     }
