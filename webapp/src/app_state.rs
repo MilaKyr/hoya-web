@@ -22,8 +22,10 @@ impl AppState {
     }
 
     pub async fn parse(&self) -> Result<(), AppErrors> {
-        self.proxy_parser.update(&self.db).await?;
-        let (shop, _hoya_positions) = self.positions_parser.parse(&self.db).await?;
+        let (shop, _hoya_positions) = self
+            .positions_parser
+            .parse(&self.db, &self.proxy_parser)
+            .await?;
         self.db.push_shop_back(&shop);
         Ok(())
     }

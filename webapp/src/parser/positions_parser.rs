@@ -1,14 +1,19 @@
 use crate::data_models::{HoyaPosition, Proxy, Shop, ShopParsingRules};
 use crate::db::Database;
 use crate::parser::errors::ParserError;
+use crate::parser::proxy_parser::ProxyManager;
 use crate::parser::traits::Parser;
 use rand::seq::SliceRandom;
+use rand::{thread_rng, Rng};
 use scraper::{ElementRef, Html, Selector};
+use std::time::Duration;
 use tokio::task::spawn_blocking;
 
-const REMOVE_WORDS: [&str; 3] = ["\u{a0}€", "€\u{a0}", "€"];
+const REMOVE_WORDS: [&str; 4] = ["\u{a0}€", "€\u{a0}", "€", "zł"];
 const REPLACE_WORDS: [(&str, &str); 1] = [(",", ".")];
 const PRICE_DEFAULT: f32 = -9.99;
+
+const PARSERS_N_TRIES: u32 = 3;
 
 fn clean_price(price: String) -> f32 {
     let mut cleaned_price = price;
@@ -18,7 +23,7 @@ fn clean_price(price: String) -> f32 {
     for (from, to) in REPLACE_WORDS {
         cleaned_price = cleaned_price.replace(from, to);
     }
-    cleaned_price.parse::<f32>().unwrap_or(PRICE_DEFAULT)
+    cleaned_price.trim().parse::<f32>().unwrap_or(PRICE_DEFAULT)
 }
 
 #[derive(Debug, Default, Copy, Clone)]
@@ -27,53 +32,72 @@ pub struct PositionsParser {}
 impl Parser for PositionsParser {}
 
 impl PositionsParser {
-    pub async fn parse(&self, db: &Database) -> Result<(Shop, Vec<HoyaPosition>), ParserError> {
+    pub async fn parse(
+        &self,
+        db: &Database,
+        proxy: &ProxyManager,
+    ) -> Result<(Shop, Vec<HoyaPosition>), ParserError> {
         let shop = db.get_top_shop().ok_or(ParserError::NoShopsFound)?;
-        let proxies = db.get_proxies();
         let shop_rules = db
             .get_shop_parsing_rules(&shop)
             .ok_or(ParserError::FailedToFindShopsRules(shop.name.to_string()))?;
-        let positions = self.parse_shop(shop.clone(), shop_rules, proxies).await?;
-        Ok((shop, positions))
+        let mut n_tries = PARSERS_N_TRIES;
+        while n_tries > 0 {
+            let positions = self.parse_shop(shop.clone(), &shop_rules, db, proxy).await;
+            match positions {
+                Ok(positions) => return Ok((shop, positions)),
+                Err(_) => n_tries -= 1,
+            }
+        }
+        Err(ParserError::NoProxyAvailable)
     }
 
     pub async fn parse_shop(
         &self,
         shop: Shop,
-        shop_rules: ShopParsingRules,
-        proxies: Vec<Proxy>,
+        shop_rules: &ShopParsingRules,
+        db: &Database,
+        proxy: &ProxyManager,
     ) -> Result<Vec<HoyaPosition>, ParserError> {
+        let selected_proxy = proxy.get(db).await?;
+        let shop = shop.clone();
+        let shop_rules = shop_rules.clone();
         let task: tokio::task::JoinHandle<Result<Vec<HoyaPosition>, ParserError>> =
             spawn_blocking(move || {
-                let mut proxies = proxies.clone();
                 let mut products = vec![];
                 for opt_category in &shop_rules.url_categories {
-                    let new_products =
-                        Self::parse_all_products(&shop, &mut proxies, &shop_rules, opt_category)?;
+                    let new_products = Self::parse_all_products(
+                        &shop,
+                        selected_proxy.clone(),
+                        &shop_rules,
+                        opt_category,
+                    )?;
                     products.extend(new_products);
                 }
                 Ok(products)
             });
-
         task.await?
     }
 
     pub fn parse_all_products(
         shop: &Shop,
-        proxies: &mut Vec<Proxy>,
+        proxy: Proxy,
         shop_rules: &ShopParsingRules,
         category: &Option<String>,
     ) -> Result<Vec<HoyaPosition>, ParserError> {
         let mut all_positions = vec![];
-
-        let (page_positions, n_pages) = Self::parse_page(shop, proxies, shop_rules, category, 1)?;
+        let (page_positions, n_pages) =
+            Self::parse_page(shop, Some(proxy.clone()), shop_rules, category, 1)?;
         all_positions.extend(page_positions);
 
         // parse rest of the pages
         for page_id in 2..=n_pages {
             shop_rules.sleep()?;
+            let mut rng = thread_rng();
+            let timeout = rng.gen_range(0..10);
+            std::thread::sleep(Duration::try_from(time::Duration::seconds(timeout))?);
             let (page_positions, _) =
-                Self::parse_page(shop, proxies, shop_rules, category, page_id)?;
+                Self::parse_page(shop, Some(proxy.clone()), shop_rules, category, page_id)?;
             all_positions.extend(page_positions);
         }
         Ok(all_positions)
@@ -81,12 +105,11 @@ impl PositionsParser {
 
     pub fn parse_page(
         shop: &Shop,
-        proxies: &mut Vec<Proxy>,
+        proxy: Option<Proxy>,
         shop_rules: &ShopParsingRules,
         category: &Option<String>,
         page_id: u32,
     ) -> Result<(Vec<HoyaPosition>, u32), ParserError> {
-        let proxy = Self::find_proxy(proxies).ok();
         let client = Self::create_client(proxy)?;
         let parsing_url = shop_rules.get_shop_parsing_url(page_id, category);
         let response_text = client.get(parsing_url).send()?.text()?;
