@@ -1,4 +1,6 @@
+use crate::parser::errors::ParserError;
 use thiserror::Error;
+use tracing::error;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -8,4 +10,14 @@ pub enum Error {
     SocketAddressParsingError(#[from] std::net::AddrParseError),
     #[error("io error: {0}")]
     IoError(#[from] std::io::Error),
+    #[error(transparent)]
+    AppErrors(AppErrors),
+}
+
+#[derive(Error, Debug)]
+pub enum AppErrors {
+    #[error("failed parsing with: {0}")]
+    ParserError(#[from] ParserError),
+    #[error("failed to parse string as url: {0}")]
+    UrlParseError(#[from] url::ParseError),
 }
