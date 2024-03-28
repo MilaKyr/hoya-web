@@ -1,12 +1,14 @@
-mod app_state;
+pub mod app_state;
 pub mod configuration;
 mod data_models;
+mod db;
 pub mod errors;
+mod parser;
 mod templates;
 
-use axum::extract::Path;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Redirect};
+use axum::response::{ErrorResponse, IntoResponse, Redirect};
 use axum::routing::get;
 use axum::routing::post;
 use axum::{Form, Router};
@@ -90,7 +92,14 @@ async fn search_all() -> impl IntoResponse {
     HtmlTemplate(template)
 }
 
-pub fn create_app() -> Result<Router, Error> {
+pub async fn parse(app_state: State<AppState>) -> axum::response::Result<StatusCode> {
+    match app_state.parse().await {
+        Ok(_) => Ok(StatusCode::OK),
+        Err(_) => Err(ErrorResponse::from(StatusCode::INTERNAL_SERVER_ERROR)),
+    }
+}
+
+pub fn create_app() -> Result<(Router, AppState), Error> {
     let app_state = AppState::init();
     let app = Router::new()
         .nest_service("/public", ServeDir::new("public"))
@@ -104,7 +113,8 @@ pub fn create_app() -> Result<Router, Error> {
         .route("/about", get(about))
         .route("/licensing", get(licensing))
         .route("/privacy_policy", get(privacy_policy))
-        .with_state(app_state)
+        .route("/parse", get(parse))
+        .with_state(app_state.clone())
         .fallback(handler_404);
-    Ok(app)
+    Ok((app, app_state))
 }
