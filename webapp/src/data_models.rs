@@ -1,18 +1,20 @@
-use crate::errors::AppErrors;
+use std::collections::HashMap;
 use crate::parser::errors::ParserError;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
-use std::str::FromStr;
 use std::time::Duration;
-use url::Url;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Product {
     pub name: String,
     pub id: u32,
+    pub listings: HashMap<Shop, Vec<Listing>>,
+    pub history_prices: Vec<(String, f32)>
 }
+
+
 
 pub enum UrlHolders {
     PageID,
@@ -39,6 +41,8 @@ impl Product {
         Self {
             name: rand_string,
             id: rng.gen(),
+            listings: Default::default(),
+            history_prices: Default::default(),
         }
     }
 }
@@ -90,29 +94,27 @@ impl Shop {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ShopListing {
-    pub shop: Shop,
-    pub category: String,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Listing {
+    pub category: Option<String>,
     pub name: String,
-    pub prod_type: HoyaType,
-    pub url: Url,
+    pub url: String,
     pub price: f32,
 }
 
-impl ShopListing {
+impl Listing {
     pub fn dummy() -> Self {
         let mut rng = thread_rng();
         Self {
-            shop: Shop::dummy(),
-            category: "category".to_string(),
+            category: Some("category".to_string()),
             name: "test name".to_string(),
-            prod_type: HoyaType::dummy(),
-            url: Url::from_str("https://example.com").unwrap(),
+            url: "https://example.com".to_string(),
             price: rng.gen_range(10.0..100.00),
         }
     }
 }
+
+
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct HoyaPosition {
@@ -121,6 +123,7 @@ pub struct HoyaPosition {
     pub price: f32,
     pub url: String,
 }
+
 
 impl HoyaPosition {
     pub fn new(shop: Shop, full_name: String, price: f32, url: String) -> Self {
@@ -133,18 +136,14 @@ impl HoyaPosition {
     }
 }
 
-impl TryFrom<HoyaPosition> for ShopListing {
-    type Error = AppErrors;
-    fn try_from(position: HoyaPosition) -> Result<Self, Self::Error> {
-        let url = Url::from_str(&position.url)?;
-        Ok(ShopListing {
-            shop: position.shop,
-            category: "NA".to_string(), // TODO
+impl From<&HoyaPosition> for Listing {
+    fn from(position: &HoyaPosition) -> Self {
+        Listing {
+            category: None, // TODO
             name: position.full_name.clone(),
-            prod_type: HoyaType::Unk, // TODO
-            url,
+            url: position.url.clone(),
             price: position.price,
-        })
+        }
     }
 }
 
@@ -266,28 +265,6 @@ mod tests {
         let pos1 = HoyaPosition::new(shop.clone(), name.to_string(), price, url.to_string());
         let pos2 = HoyaPosition::new(shop.clone(), name.to_string(), price, url.to_string());
         assert_eq!(pos1, pos2);
-    }
-
-    #[test]
-    fn hoya_position_to_shop_listing_works() {
-        let shop = Shop::dummy();
-        let name = "test name";
-        let price = 1.99;
-        let url = "https://example.com";
-        let proper_url = Url::from_str(url).expect("Failed to convert string to url");
-        let position = HoyaPosition::new(shop.clone(), name.to_string(), price, url.to_string());
-        let result: ShopListing = position
-            .try_into()
-            .expect("Failed to convert to shop listing");
-        let expected_result = ShopListing {
-            shop,
-            category: "NA".to_string(),
-            name: name.to_string(),
-            prod_type: HoyaType::Unk,
-            url: proper_url,
-            price,
-        };
-        assert_eq!(result, expected_result);
     }
 
     #[test]

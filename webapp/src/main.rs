@@ -1,25 +1,24 @@
-use std::net::IpAddr;
-use std::net::SocketAddr;
-use std::str::FromStr;
 use std::time::Duration;
+use tokio::net::TcpListener;
 use tokio::time::MissedTickBehavior::Skip;
 use webapp::configuration::get_configuration;
 use webapp::create_app;
 use webapp::errors::Error;
 
-fn bind_address(host: &str, port: u16) -> Result<SocketAddr, Error> {
-    let host = IpAddr::from_str(host)?;
-    Ok(SocketAddr::from((host, port)))
+async fn bind_address(host: &str, port: u16) -> Result<TcpListener, Error> {
+    let address = format!("{}:{}", host, port);
+    let listener = TcpListener::bind(address).await?;
+    Ok(listener)
 }
 
 #[tokio::main]
 async fn main() {
     let configuration = get_configuration().expect("Failed to read configuration");
-    let addr = bind_address(
+    let listener = bind_address(
         &configuration.application.host,
         configuration.application.port,
     )
-    .expect("Failed to create socket address");
+    .await.expect("Failed to create socket address");
 
     let (app, app_state) = create_app().expect("Failed to start server");
     let mut interval = tokio::time::interval(Duration::from_secs(configuration.parsing_delay));
@@ -32,8 +31,7 @@ async fn main() {
         }
     });
     task.await.expect("Failed to parse data");
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
+    axum::serve(listener, app)
         .await
         .unwrap();
 }

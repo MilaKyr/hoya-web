@@ -1,6 +1,8 @@
 use crate::data_models::{HoyaPosition, Proxy, ProxyParsingRules, Shop, ShopParsingRules};
 use crate::db::in_memory::InMemoryDB;
 use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+use time::Date;
 use url::Url;
 
 pub mod in_memory;
@@ -11,7 +13,39 @@ pub enum Database {
     InMemory(InMemoryDB),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+pub struct DatabaseProduct {
+    pub name: String,
+    pub id: u32,
+}
+
+
 impl Database {
+
+    pub fn all_products(&self) -> Vec<DatabaseProduct> {
+        match self {
+            Database::InMemory(in_memory_db) => in_memory_db.all_products(),
+        }
+    }
+
+    pub fn get_product_by(&self, id: u32) -> Option<DatabaseProduct> {
+        match self {
+            Database::InMemory(in_memory_db) => in_memory_db.get_product_by(id),
+        }
+    }
+
+    pub fn get_positions_for(&self, product: &DatabaseProduct) -> Vec<HoyaPosition> {
+        match self {
+            Database::InMemory(in_memory_db) => in_memory_db.get_positions_for(product),
+        }
+    }
+
+    pub fn get_prices_for(&self, product: &DatabaseProduct) -> HashMap<Date, f32> {
+        match self {
+            Database::InMemory(in_memory_db) => in_memory_db.get_prices_for(product),
+        }
+    }
+
     pub fn save_proxies(&self, proxies: Vec<Proxy>) {
         match self {
             Database::InMemory(in_memory_db) => {
@@ -32,11 +66,6 @@ impl Database {
         }
     }
 
-    pub fn get_positions_by(&self, name: &String) -> Option<Vec<HoyaPosition>> {
-        match self {
-            Database::InMemory(in_memory_db) => in_memory_db.get_positions_by(name),
-        }
-    }
 
     pub fn get_top_shop(&self) -> Option<Shop> {
         match self {
