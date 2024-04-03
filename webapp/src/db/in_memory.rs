@@ -1,5 +1,6 @@
 use crate::data_models::{HoyaPosition, Proxy, ProxyParsingRules, Shop, ShopParsingRules};
 use crate::db::map_json_as_pairs::map_as_pairs;
+use crate::db::{DatabaseProduct, ProductFilter, SearchFilter, SearchQuery};
 use serde;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -7,9 +8,14 @@ use std::str::FromStr;
 use std::sync::RwLock;
 use time::Date;
 use url::Url;
-use crate::db::DatabaseProduct;
 
 pub type HoyaName = String;
+
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+pub struct PriceRange {
+    pub min: f32,
+    pub max: f32,
+}
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct FileStructure {
@@ -35,6 +41,7 @@ pub struct InMemoryDB {
     pub products: RwLock<Vec<DatabaseProduct>>,
     pub historic_prices: RwLock<HashMap<HoyaName, HashMap<Date, f32>>>,
     pub proxy_parsing_rules: RwLock<HashMap<Url, ProxyParsingRules>>,
+    pub price_range: PriceRange,
 }
 
 impl InMemoryDB {
@@ -47,6 +54,25 @@ impl InMemoryDB {
                 proxy_parsing_rules.insert(url, rules);
             }
         }
+        let mut min_price = 0.;
+        let mut max_price = 0.;
+        for (_, positions) in db.positions.iter() {
+            let prices: Vec<f32> = positions.iter().map(|pos| pos.price).collect();
+            let curr_min = prices
+                .iter()
+                .min_by(|a, b| a.partial_cmp(b).expect("Failed to compare"))
+                .unwrap_or(&0.0);
+            if *curr_min < min_price {
+                min_price = *curr_min;
+            }
+            let curr_max = prices
+                .iter()
+                .min_by(|a, b| b.partial_cmp(a).expect("Failed to compare"))
+                .unwrap_or(&0.0);
+            if *curr_max > max_price {
+                max_price = *curr_max;
+            }
+        }
         Self {
             proxies: RwLock::new(db.proxies),
             shops: RwLock::new(VecDeque::from(db.shops)),
@@ -56,6 +82,10 @@ impl InMemoryDB {
             products: RwLock::new(vec![]), // TODO
             historic_prices: Default::default(),
             proxy_parsing_rules: RwLock::new(proxy_parsing_rules),
+            price_range: PriceRange {
+                min: min_price,
+                max: max_price,
+            },
         }
     }
 
@@ -73,6 +103,52 @@ impl InMemoryDB {
         let products = self.products.read().unwrap();
         products.clone()
     }
+    pub fn get_shop_by(&self, id: u32) -> Option<Shop> {
+        let shops = self.shops.read().unwrap();
+        shops.get(id as usize).cloned()
+    }
+
+    fn search(
+        &self,
+        products: Vec<DatabaseProduct>,
+        filter: &Option<ProductFilter>,
+        query: SearchQuery,
+    ) -> Vec<DatabaseProduct> {
+        let mut selected = vec![];
+
+        for product in products.iter() {
+            let positions = self.get_positions_for(product);
+
+            if positions.iter().any(|pos| {
+                (pos.price
+                    >= filter
+                        .as_ref()
+                        .and_then(|prod| prod.price_min)
+                        .unwrap_or(0.0)
+                    || pos.price
+                        <= filter
+                            .as_ref()
+                            .and_then(|prod| prod.price_max)
+                            .unwrap_or(f32::MAX))
+                    && pos.full_name.contains(&query.to_string())
+            }) {
+                selected.push(product.clone());
+            }
+        }
+        selected
+    }
+    pub fn search_with_filters(&self, filter: SearchFilter) -> Vec<DatabaseProduct> {
+        let all_products = self.products.read().unwrap().to_owned();
+        if !filter.contains_query() {
+            return all_products;
+        }
+        let query = filter.query().expect("Query cannot be empty");
+        self.search(all_products, &filter.product, query)
+    }
+
+    pub fn get_product_filter(&self) -> ProductFilter {
+        self.price_range.into()
+    }
 
     pub fn get_product_by(&self, id: u32) -> Option<DatabaseProduct> {
         let products = self.products.read().unwrap();
@@ -86,9 +162,7 @@ impl InMemoryDB {
 
     pub fn get_prices_for(&self, product: &DatabaseProduct) -> HashMap<Date, f32> {
         let positions = self.historic_prices.read().unwrap();
-        positions.get(&product.name)
-            .cloned()
-            .unwrap_or_default()
+        positions.get(&product.name).cloned().unwrap_or_default()
     }
 
     pub fn get_top_shop(&self) -> Option<Shop> {

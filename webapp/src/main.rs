@@ -18,7 +18,8 @@ async fn main() {
         &configuration.application.host,
         configuration.application.port,
     )
-    .await.expect("Failed to create socket address");
+    .await
+    .expect("Failed to create socket address");
 
     let (app, app_state) = create_app().expect("Failed to start server");
     let mut interval = tokio::time::interval(Duration::from_secs(configuration.parsing_delay));
@@ -31,7 +32,5 @@ async fn main() {
         }
     });
     task.await.expect("Failed to parse data");
-    axum::serve(listener, app)
-        .await
-        .unwrap();
+    axum::serve(listener, app).await.unwrap();
 }

@@ -1,13 +1,15 @@
-use axum::{body, body::Body, http::{Request, StatusCode}};
+use axum::{
+    body,
+    body::Body,
+    http::{Request, StatusCode},
+};
 use tower::ServiceExt;
 use webapp::create_app;
 use webapp::data_models::Product;
 
-
 pub async fn read_body(body: Body) -> String {
     let bytes = body::to_bytes(body, usize::MAX).await.expect("Failed");
-    String::from_utf8(bytes.to_vec())
-        .expect("response was not valid utf-8")
+    String::from_utf8(bytes.to_vec()).expect("response was not valid utf-8")
 }
 
 #[tokio::test]
@@ -32,14 +34,21 @@ async fn products_works() {
     let (app, _) = create_app().expect("Failed to create an app");
 
     let response = app
-        .oneshot(Request::builder().uri("/products").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/products")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
 
     let (parts, body) = response.into_parts();
     let text = read_body(body).await;
     assert_eq!(parts.status, StatusCode::OK);
-    assert!(serde_json::from_str::<Vec<Product>>(&text).expect("Failed to convert string to vec").is_empty());
+    assert!(serde_json::from_str::<Vec<Product>>(&text)
+        .expect("Failed to convert string to vec")
+        .is_empty());
 }
 
 #[tokio::test]

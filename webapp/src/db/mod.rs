@@ -1,7 +1,9 @@
 use crate::data_models::{HoyaPosition, Proxy, ProxyParsingRules, Shop, ShopParsingRules};
-use crate::db::in_memory::InMemoryDB;
-use std::collections::HashMap;
+use crate::db::in_memory::{InMemoryDB, PriceRange};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::error::Error;
+use std::fmt::Display;
 use time::Date;
 use url::Url;
 
@@ -13,15 +15,67 @@ pub enum Database {
     InMemory(InMemoryDB),
 }
 
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+pub struct ProductFilter {
+    pub price_min: Option<f32>,
+    pub price_max: Option<f32>,
+}
+
+impl From<PriceRange> for ProductFilter {
+    fn from(price_range: PriceRange) -> Self {
+        ProductFilter {
+            price_min: Some(price_range.min),
+            price_max: Some(price_range.max),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+pub struct SearchFilter {
+    product: Option<ProductFilter>,
+    query: SearchQuery,
+}
+
+impl SearchFilter {
+    pub fn contains_query(&self) -> bool {
+        !self.query.0.is_empty()
+    }
+    pub fn query(&self) -> Result<SearchQuery, Box<dyn Error>> {
+        if self.contains_query() {
+            return Ok(self.query.cleaned());
+        }
+        Err(Box::from("Query is empty".to_string()))
+    }
+}
+
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+pub struct SearchQuery(String);
+
+impl SearchQuery {
+    pub fn cleaned(&self) -> Self {
+        let mut query = self.0.clone();
+        query = query.trim().to_lowercase();
+        query = query
+            .chars()
+            .filter(|c| !c.is_ascii_punctuation())
+            .collect::<String>();
+        SearchQuery(query)
+    }
+}
+
+impl Display for SearchQuery {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0.clone())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct DatabaseProduct {
     pub name: String,
     pub id: u32,
 }
 
-
 impl Database {
-
     pub fn all_products(&self) -> Vec<DatabaseProduct> {
         match self {
             Database::InMemory(in_memory_db) => in_memory_db.all_products(),
@@ -54,6 +108,28 @@ impl Database {
         }
     }
 
+    pub fn search_with_filter(&self, filter: SearchFilter) -> Vec<DatabaseProduct> {
+        match self {
+            Database::InMemory(in_memory_db) => in_memory_db.search_with_filters(filter),
+        }
+    }
+
+    pub fn get_search_filter(&self) -> SearchFilter {
+        let product_filter = match self {
+            Database::InMemory(in_memory_db) => in_memory_db.get_product_filter(),
+        };
+        SearchFilter {
+            product: Some(product_filter),
+            ..Default::default()
+        }
+    }
+
+    pub fn get_shop_by(&self, id: u32) -> Option<Shop> {
+        match self {
+            Database::InMemory(in_memory_db) => in_memory_db.get_shop_by(id),
+        }
+    }
+
     pub fn set_positions(&self, name: String, hoya_positions: Vec<HoyaPosition>) {
         match self {
             Database::InMemory(in_memory_db) => in_memory_db.set_positions(name, hoya_positions),
@@ -65,7 +141,6 @@ impl Database {
             Database::InMemory(in_memory_db) => in_memory_db.get_positions_all(),
         }
     }
-
 
     pub fn get_top_shop(&self) -> Option<Shop> {
         match self {

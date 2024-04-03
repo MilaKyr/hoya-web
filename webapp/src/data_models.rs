@@ -1,8 +1,8 @@
-use std::collections::HashMap;
 use crate::parser::errors::ParserError;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::time::Duration;
 
@@ -11,10 +11,8 @@ pub struct Product {
     pub name: String,
     pub id: u32,
     pub listings: HashMap<Shop, Vec<Listing>>,
-    pub history_prices: Vec<(String, f32)>
+    pub history_prices: Vec<(String, f32)>,
 }
-
-
 
 pub enum UrlHolders {
     PageID,
@@ -54,16 +52,6 @@ pub enum HoyaType {
     Unk,
 }
 
-impl HoyaType {
-    fn dummy() -> Self {
-        let mut rng = thread_rng();
-        if rng.gen_bool(0.5) {
-            return Self::Cutting;
-        }
-        Self::Rooted
-    }
-}
-
 impl std::fmt::Display for HoyaType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -78,6 +66,7 @@ impl std::fmt::Display for HoyaType {
 pub struct Shop {
     pub logo_path: String,
     pub name: String,
+    pub url: String,
 }
 
 impl Shop {
@@ -90,6 +79,7 @@ impl Shop {
         Self {
             logo_path: "../public/img/home_icon.png".to_string(),
             name: rand_string,
+            ..Default::default()
         }
     }
 }
@@ -114,8 +104,6 @@ impl Listing {
     }
 }
 
-
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct HoyaPosition {
     pub shop: Shop,
@@ -123,7 +111,6 @@ pub struct HoyaPosition {
     pub price: f32,
     pub url: String,
 }
-
 
 impl HoyaPosition {
     pub fn new(shop: Shop, full_name: String, price: f32, url: String) -> Self {
