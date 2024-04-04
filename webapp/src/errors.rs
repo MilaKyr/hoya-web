@@ -28,6 +28,8 @@ pub enum AppErrors {
     UrlParseError(#[from] url::ParseError),
     #[error("")]
     UnknownProduct,
+    #[error("transparent")]
+    DatabaseError(#[from] crate::db::DatabaseError),
 }
 
 impl IntoResponse for AppErrors {
@@ -36,6 +38,7 @@ impl IntoResponse for AppErrors {
             AppErrors::UnknownProduct => (StatusCode::BAD_REQUEST, "".to_string()),
             AppErrors::UrlParseError(s) => (StatusCode::INTERNAL_SERVER_ERROR, s.to_string()),
             AppErrors::ParserError(s) => (StatusCode::INTERNAL_SERVER_ERROR, s.to_string()),
+            AppErrors::DatabaseError(s) => (StatusCode::INTERNAL_SERVER_ERROR, s.to_string()),
         };
 
         let body = Json(json!({

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::time::Duration;
+use crate::db::{HoyaPosition, Shop};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Product {
@@ -62,27 +63,6 @@ impl std::fmt::Display for HoyaType {
     }
 }
 
-#[derive(Debug, Default, Clone, Eq, Hash, PartialEq, Serialize, Deserialize)]
-pub struct Shop {
-    pub logo_path: String,
-    pub name: String,
-    pub url: String,
-}
-
-impl Shop {
-    pub fn dummy() -> Self {
-        let rand_string: String = thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(10)
-            .map(char::from)
-            .collect();
-        Self {
-            logo_path: "../public/img/home_icon.png".to_string(),
-            name: rand_string,
-            ..Default::default()
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Listing {
@@ -104,24 +84,6 @@ impl Listing {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct HoyaPosition {
-    pub shop: Shop,
-    pub full_name: String,
-    pub price: f32,
-    pub url: String,
-}
-
-impl HoyaPosition {
-    pub fn new(shop: Shop, full_name: String, price: f32, url: String) -> Self {
-        Self {
-            shop,
-            full_name,
-            price,
-            url,
-        }
-    }
-}
 
 impl From<&HoyaPosition> for Listing {
     fn from(position: &HoyaPosition) -> Self {

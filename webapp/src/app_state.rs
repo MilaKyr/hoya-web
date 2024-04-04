@@ -26,7 +26,7 @@ impl AppState {
             .positions_parser
             .parse(&self.db, &self.proxy_parser)
             .await?;
-        self.db.push_shop_back(&shop);
+        self.db.push_shop_back(&shop).await;
         Ok(())
     }
 }

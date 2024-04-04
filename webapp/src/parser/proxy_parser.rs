@@ -18,7 +18,7 @@ impl Parser for ProxyManager {}
 
 impl ProxyManager {
     pub async fn get(&self, db: &Database) -> Result<Proxy, ParserError> {
-        let proxy_parsing_rules = db.get_proxy_parsing_rules();
+        let proxy_parsing_rules = db.get_proxy_parsing_rules().await;
         let proxies: Result<Vec<Proxy>, ParserError> = spawn_blocking(move || {
             let mut proxies = vec![];
             for (proxy_source, parsing_rules) in proxy_parsing_rules.into_iter() {

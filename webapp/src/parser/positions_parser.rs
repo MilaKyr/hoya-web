@@ -1,5 +1,5 @@
-use crate::data_models::{HoyaPosition, Proxy, Shop, ShopParsingRules};
-use crate::db::Database;
+use crate::data_models::{Proxy, ShopParsingRules};
+use crate::db::{Database, HoyaPosition, Shop};
 use crate::parser::errors::ParserError;
 use crate::parser::proxy_parser::ProxyManager;
 use crate::parser::traits::Parser;
@@ -37,9 +37,10 @@ impl PositionsParser {
         db: &Database,
         proxy: &ProxyManager,
     ) -> Result<(Shop, Vec<HoyaPosition>), ParserError> {
-        let shop = db.get_top_shop().ok_or(ParserError::NoShopsFound)?;
+        let shop = db.get_top_shop().await.ok_or(ParserError::NoShopsFound)?;
         let shop_rules = db
             .get_shop_parsing_rules(&shop)
+            .await
             .ok_or(ParserError::FailedToFindShopsRules(shop.name.to_string()))?;
         let mut n_tries = PARSERS_N_TRIES;
         while n_tries > 0 {
@@ -185,8 +186,9 @@ mod tests {
 
     fn create_test_shop() -> Shop {
         Shop {
-            logo_path: "path/to/file".to_string(),
+            logo: "path/to/file".to_string(),
             name: "test name".to_string(),
+            ..Default::default()
         }
     }
 

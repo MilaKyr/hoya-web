@@ -1,6 +1,6 @@
-use crate::data_models::{HoyaPosition, Proxy, ProxyParsingRules, Shop, ShopParsingRules};
+use crate::data_models::{Proxy, ProxyParsingRules, ShopParsingRules};
 use crate::db::map_json_as_pairs::map_as_pairs;
-use crate::db::{DatabaseProduct, ProductFilter, SearchFilter, SearchQuery};
+use crate::db::{DatabaseProduct, ProductFilter, SearchFilter, SearchQuery, HoyaPosition, Shop};
 use serde;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -8,6 +8,7 @@ use std::str::FromStr;
 use std::sync::RwLock;
 use time::Date;
 use url::Url;
+use crate::db::errors::DBError;
 
 pub type HoyaName = String;
 
@@ -99,9 +100,9 @@ impl InMemoryDB {
         positions.clone()
     }
 
-    pub fn all_products(&self) -> Vec<DatabaseProduct> {
+    pub fn all_products(&self) -> Result<Vec<DatabaseProduct>, DBError> {
         let products = self.products.read().unwrap();
-        products.clone()
+        Ok(products.clone())
     }
     pub fn get_shop_by(&self, id: u32) -> Option<Shop> {
         let shops = self.shops.read().unwrap();
@@ -113,11 +114,11 @@ impl InMemoryDB {
         products: Vec<DatabaseProduct>,
         filter: &Option<ProductFilter>,
         query: SearchQuery,
-    ) -> Vec<DatabaseProduct> {
+    ) -> Result<Vec<DatabaseProduct>, DBError> {
         let mut selected = vec![];
 
         for product in products.iter() {
-            let positions = self.get_positions_for(product);
+            let positions = self.get_positions_for(product)?;
 
             if positions.iter().any(|pos| {
                 (pos.price
@@ -135,12 +136,12 @@ impl InMemoryDB {
                 selected.push(product.clone());
             }
         }
-        selected
+        Ok(selected)
     }
-    pub fn search_with_filters(&self, filter: SearchFilter) -> Vec<DatabaseProduct> {
+    pub fn search_with_filters(&self, filter: SearchFilter) -> Result<Vec<DatabaseProduct>, DBError> {
         let all_products = self.products.read().unwrap().to_owned();
         if !filter.contains_query() {
-            return all_products;
+            return Ok(all_products);
         }
         let query = filter.query().expect("Query cannot be empty");
         self.search(all_products, &filter.product, query)
@@ -150,19 +151,20 @@ impl InMemoryDB {
         self.price_range.into()
     }
 
-    pub fn get_product_by(&self, id: u32) -> Option<DatabaseProduct> {
+    pub fn get_product_by(&self, id: u32) -> Result<DatabaseProduct, DBError> {
         let products = self.products.read().unwrap();
-        products.get(id as usize).cloned()
+        products.get(id as usize).cloned().ok_or(DBError::UnknownProduct)
     }
 
-    pub fn get_positions_for(&self, product: &DatabaseProduct) -> Vec<HoyaPosition> {
+    pub fn get_positions_for(&self, product: &DatabaseProduct) -> Result<Vec<HoyaPosition>, DBError> {
         let positions = self.positions.read().unwrap();
-        positions.get(&product.name).cloned().unwrap_or_default()
+        positions.get(&product.name).cloned().ok_or(DBError::UnknownProduct)
     }
 
-    pub fn get_prices_for(&self, product: &DatabaseProduct) -> HashMap<Date, f32> {
+    pub fn get_prices_for(&self, product: &DatabaseProduct) -> Result<Vec<(Date, f32)>, DBError> {
         let positions = self.historic_prices.read().unwrap();
-        positions.get(&product.name).cloned().unwrap_or_default()
+        let prices = positions.get(&product.name).cloned().unwrap_or_default();
+        Ok(prices.into_iter().collect())
     }
 
     pub fn get_top_shop(&self) -> Option<Shop> {
@@ -207,8 +209,9 @@ mod tests {
 
     fn create_test_shop(name: &str) -> Shop {
         Shop {
-            logo_path: "path/to/file".to_string(),
+            logo: "path/to/file".to_string(),
             name: name.to_string(),
+            ..Default::default()
         }
     }
 
