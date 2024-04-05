@@ -2,3 +2,12 @@ parsing_delay: 86400
 application:
   host: 127.0.0.1
   port: 8000
+database:
+  db_type: relational
+  # file_path: ...
+  protocol: postgres
+  host: 127.0.0.1
+  port: 5432
+  user: main
+  password: password
+  name: api

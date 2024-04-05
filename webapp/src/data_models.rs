@@ -1,3 +1,4 @@
+use crate::db::{HoyaPosition, Shop};
 use crate::parser::errors::ParserError;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
@@ -5,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::time::Duration;
-use crate::db::{HoyaPosition, Shop};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Product {
@@ -63,7 +63,6 @@ impl std::fmt::Display for HoyaType {
     }
 }
 
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Listing {
     pub category: Option<String>,
@@ -83,7 +82,6 @@ impl Listing {
         }
     }
 }
-
 
 impl From<&HoyaPosition> for Listing {
     fn from(position: &HoyaPosition) -> Self {

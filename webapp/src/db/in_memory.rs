@@ -1,14 +1,15 @@
 use crate::data_models::{Proxy, ProxyParsingRules, ShopParsingRules};
+use crate::db::errors::DBError;
 use crate::db::map_json_as_pairs::map_as_pairs;
-use crate::db::{DatabaseProduct, ProductFilter, SearchFilter, SearchQuery, HoyaPosition, Shop};
+use crate::db::{DatabaseProduct, HoyaPosition, ProductFilter, SearchFilter, SearchQuery, Shop};
 use serde;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
+use std::fs;
 use std::str::FromStr;
 use std::sync::RwLock;
 use time::Date;
 use url::Url;
-use crate::db::errors::DBError;
 
 pub type HoyaName = String;
 
@@ -43,6 +44,52 @@ pub struct InMemoryDB {
     pub historic_prices: RwLock<HashMap<HoyaName, HashMap<Date, f32>>>,
     pub proxy_parsing_rules: RwLock<HashMap<Url, ProxyParsingRules>>,
     pub price_range: PriceRange,
+}
+
+impl From<String> for InMemoryDB {
+    fn from(file_path: String) -> Self {
+        let data = fs::read_to_string(file_path).expect("Failed to read file");
+        let db: FileStructure = serde_json::from_str(&data).expect("Fail to read JSON");
+        let mut proxy_parsing_rules = HashMap::new();
+        for (url, rules) in db.proxy_parsing_rules.into_iter() {
+            if let Ok(url) = Url::from_str(&url) {
+                proxy_parsing_rules.insert(url, rules);
+            }
+        }
+        let mut min_price = 0.;
+        let mut max_price = 0.;
+        for (_, positions) in db.positions.iter() {
+            let prices: Vec<f32> = positions.iter().map(|pos| pos.price).collect();
+            let curr_min = prices
+                .iter()
+                .min_by(|a, b| a.partial_cmp(b).expect("Failed to compare"))
+                .unwrap_or(&0.0);
+            if *curr_min < min_price {
+                min_price = *curr_min;
+            }
+            let curr_max = prices
+                .iter()
+                .min_by(|a, b| b.partial_cmp(a).expect("Failed to compare"))
+                .unwrap_or(&0.0);
+            if *curr_max > max_price {
+                max_price = *curr_max;
+            }
+        }
+        Self {
+            proxies: RwLock::new(db.proxies),
+            shops: RwLock::new(VecDeque::from(db.shops)),
+            shops_parsing_rules: RwLock::new(db.shops_parsing_rules),
+            pictures: RwLock::new(db.pictures),
+            positions: RwLock::new(db.positions),
+            products: RwLock::new(vec![]), // TODO
+            historic_prices: Default::default(),
+            proxy_parsing_rules: RwLock::new(proxy_parsing_rules),
+            price_range: PriceRange {
+                min: min_price,
+                max: max_price,
+            },
+        }
+    }
 }
 
 impl InMemoryDB {
@@ -138,7 +185,10 @@ impl InMemoryDB {
         }
         Ok(selected)
     }
-    pub fn search_with_filters(&self, filter: SearchFilter) -> Result<Vec<DatabaseProduct>, DBError> {
+    pub fn search_with_filters(
+        &self,
+        filter: SearchFilter,
+    ) -> Result<Vec<DatabaseProduct>, DBError> {
         let all_products = self.products.read().unwrap().to_owned();
         if !filter.contains_query() {
             return Ok(all_products);
@@ -153,12 +203,21 @@ impl InMemoryDB {
 
     pub fn get_product_by(&self, id: u32) -> Result<DatabaseProduct, DBError> {
         let products = self.products.read().unwrap();
-        products.get(id as usize).cloned().ok_or(DBError::UnknownProduct)
+        products
+            .get(id as usize)
+            .cloned()
+            .ok_or(DBError::UnknownProduct)
     }
 
-    pub fn get_positions_for(&self, product: &DatabaseProduct) -> Result<Vec<HoyaPosition>, DBError> {
+    pub fn get_positions_for(
+        &self,
+        product: &DatabaseProduct,
+    ) -> Result<Vec<HoyaPosition>, DBError> {
         let positions = self.positions.read().unwrap();
-        positions.get(&product.name).cloned().ok_or(DBError::UnknownProduct)
+        positions
+            .get(&product.name)
+            .cloned()
+            .ok_or(DBError::UnknownProduct)
     }
 
     pub fn get_prices_for(&self, product: &DatabaseProduct) -> Result<Vec<(Date, f32)>, DBError> {

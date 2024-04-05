@@ -6,6 +6,7 @@ use axum::{
 use tower::ServiceExt;
 use webapp::create_app;
 use webapp::data_models::Product;
+use webapp::db::Database;
 
 pub async fn read_body(body: Body) -> String {
     let bytes = body::to_bytes(body, usize::MAX).await.expect("Failed");
@@ -14,7 +15,8 @@ pub async fn read_body(body: Body) -> String {
 
 #[tokio::test]
 async fn health_check_works() {
-    let (app, _) = create_app().expect("Failed to create an app");
+    let db = Database::new_im_memory();
+    let (app, _) = create_app(db).expect("Failed to create an app");
 
     let response = app
         .oneshot(
@@ -31,7 +33,8 @@ async fn health_check_works() {
 
 #[tokio::test]
 async fn products_works() {
-    let (app, _) = create_app().expect("Failed to create an app");
+    let db = Database::new_im_memory();
+    let (app, _) = create_app(db).expect("Failed to create an app");
 
     let response = app
         .oneshot(
@@ -53,7 +56,8 @@ async fn products_works() {
 
 #[tokio::test]
 async fn n_product_works() {
-    let (app, _) = create_app().expect("Failed to create an app");
+    let db = Database::new_im_memory();
+    let (app, _) = create_app(db).expect("Failed to create an app");
 
     let response = app
         .oneshot(
@@ -73,7 +77,8 @@ async fn n_product_works() {
 
 #[tokio::test]
 async fn product_id_fails() {
-    let (app, _) = create_app().expect("Failed to create an app");
+    let db = Database::new_im_memory();
+    let (app, _) = create_app(db).expect("Failed to create an app");
 
     let response = app
         .oneshot(

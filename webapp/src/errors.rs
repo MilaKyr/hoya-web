@@ -30,6 +30,21 @@ pub enum AppErrors {
     UnknownProduct,
     #[error("transparent")]
     DatabaseError(#[from] crate::db::DatabaseError),
+    #[error("transparent")]
+    ConfigurationError(#[from] ConfigurationError),
+}
+
+#[derive(Error, Debug)]
+pub enum ConfigurationError {
+    #[error("one or more settings are missed: provider, host, port, user, password")]
+    MissingDatabaseSettings,
+    #[error("data file not found")]
+    DataFileNotFound,
+    // TODO check to str
+    #[error("cannot be empty: {0}")]
+    CannotBeEmpty(String),
+    #[error("Unknown database type")]
+    UnknownDatabaseType,
 }
 
 impl IntoResponse for AppErrors {
@@ -39,6 +54,7 @@ impl IntoResponse for AppErrors {
             AppErrors::UrlParseError(s) => (StatusCode::INTERNAL_SERVER_ERROR, s.to_string()),
             AppErrors::ParserError(s) => (StatusCode::INTERNAL_SERVER_ERROR, s.to_string()),
             AppErrors::DatabaseError(s) => (StatusCode::INTERNAL_SERVER_ERROR, s.to_string()),
+            AppErrors::ConfigurationError(s) => (StatusCode::INTERNAL_SERVER_ERROR, s.to_string()),
         };
 
         let body = Json(json!({

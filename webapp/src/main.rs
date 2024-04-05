@@ -3,6 +3,7 @@ use tokio::net::TcpListener;
 use tokio::time::MissedTickBehavior::Skip;
 use webapp::configuration::get_configuration;
 use webapp::create_app;
+use webapp::db::Database;
 use webapp::errors::Error;
 
 async fn bind_address(host: &str, port: u16) -> Result<TcpListener, Error> {
@@ -21,7 +22,10 @@ async fn main() {
     .await
     .expect("Failed to create socket address");
 
-    let (app, app_state) = create_app().expect("Failed to start server");
+    let db = Database::try_from(&configuration.database)
+        .await
+        .expect("Failed to start DB");
+    let (app, app_state) = create_app(db).expect("Failed to start server");
     let mut interval = tokio::time::interval(Duration::from_secs(configuration.parsing_delay));
     interval.set_missed_tick_behavior(Skip);
     let task = tokio::task::spawn(async move {

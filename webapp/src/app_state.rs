@@ -1,4 +1,3 @@
-use crate::db::in_memory::InMemoryDB;
 use crate::db::Database;
 use crate::errors::AppErrors;
 use crate::parser::positions_parser::PositionsParser;
@@ -13,11 +12,11 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn init() -> Self {
+    pub fn init(db: Database) -> Self {
         Self {
             positions_parser: PositionsParser::default(),
             proxy_parser: ProxyManager::default(),
-            db: Arc::new(Database::InMemory(InMemoryDB::init())),
+            db: Arc::new(db),
         }
     }
 
