@@ -11,7 +11,8 @@ CREATE TABLE Shop (
     id SERIAL PRIMARY KEY,
     name VARCHAR(256) NOT NULL,
     url VARCHAR(256) NOT NULL,
-    logo VARCHAR(512) NOT NULL
+    logo VARCHAR(512) NOT NULL,
+    last_parsed TIMESTAMP
 );
 
 CREATE TABLE ShopPosition (
@@ -61,3 +62,64 @@ CREATE TABLE Alerts
     FOREIGN KEY (product_id) REFERENCES Product(id) ON DELETE CASCADE,
     FOREIGN KEY (email_id) REFERENCES Contacts(id) ON DELETE CASCADE
 );
+
+
+CREATE TABLE ParsingLookup (
+    id SERIAL PRIMARY KEY,
+    shop_id INT NOT NULL,
+    max_page INT NOT NULL,
+    product_table TEXT NOT NULL,
+    product TEXT NOT NULL,
+    name TEXT NOT NULL,
+    price TEXT NOT NULL,
+    url TEXT NOT NULL,
+    FOREIGN KEY (shop_id) REFERENCES Shop(id) ON DELETE CASCADE
+);
+
+CREATE TABLE ShopParsingRules
+(
+    id SERIAL PRIMARY KEY,
+    shop_id INT NOT NULL,
+    url VARCHAR(256) NOT NULL,
+    lookup_id INT NOT NULL,
+    look_for_href BOOL DEFAULT FALSE,
+    sleep_timeout_sec INT,
+    FOREIGN KEY (lookup_id) REFERENCES ParsingLookup(id) ON DELETE CASCADE,
+    FOREIGN KEY (shop_id) REFERENCES Shop(id) ON DELETE CASCADE
+);
+
+CREATE TABLE ParsingCategory
+(
+    id SERIAL PRIMARY KEY,
+    shop_id INT NOT NULL,
+    category VARCHAR(256) NOT NULL,
+    FOREIGN KEY (shop_id) REFERENCES Shop(id) ON DELETE CASCADE
+);
+
+CREATE TABLE ProxySources
+(
+    id SERIAL PRIMARY KEY,
+    source TEXT NOT NULL
+
+);
+
+CREATE TABLE ProxyParsingRules
+(
+    id SERIAL PRIMARY KEY,
+    source_id INT NOT NULL,
+    table_name TEXT NOT NULL,
+    head TEXT NOT NULL,
+    row TEXT NOT NULL,
+    data TEXT NOT NULL,
+    FOREIGN KEY (source_id) REFERENCES ProxySources(id) ON DELETE CASCADE
+
+);
+
+CREATE TABLE Proxy
+(
+    id SERIAL PRIMARY KEY,
+    url TEXT NOT NULL
+);
+
+
+

@@ -5,7 +5,6 @@ use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Product {
@@ -94,42 +93,6 @@ impl From<&HoyaPosition> for Listing {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct ShopParsingRules {
-    pub url_categories: Vec<Option<String>>,
-    pub parsing_url: String,
-    pub max_page_lookup: String,
-    pub product_table_lookup: String,
-    pub product_lookup: String,
-    pub name_lookup: String,
-    pub price_lookup: String,
-    pub url_lookup: String,
-    #[serde(default)]
-    pub look_for_href: bool,
-    #[serde(default)]
-    pub sleep_timeout_sec: Option<u64>,
-}
-
-impl ShopParsingRules {
-    pub fn get_shop_parsing_url(&self, page_number: u32, category: &Option<String>) -> String {
-        let mut url = self.parsing_url.clone();
-        url = url.replace(&UrlHolders::PageID.to_string(), &page_number.to_string());
-        if let Some(category) = category {
-            url = url.replace(&UrlHolders::CategoryID.to_string(), category);
-        }
-        url
-    }
-
-    pub fn sleep(&self) -> Result<(), time::error::ConversionRange> {
-        if let Some(duration_to_sleep) = self.sleep_timeout_sec {
-            std::thread::sleep(Duration::try_from(time::Duration::seconds(
-                duration_to_sleep as i64,
-            ))?);
-        }
-        Ok(())
-    }
-}
-
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProxyParsingRules {
     pub table_lookup: String,
@@ -186,6 +149,7 @@ impl TryFrom<Vec<(&String, &String)>> for Proxy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::in_memory::ShopParsingRules;
 
     #[test]
     fn url_holders_to_string_work() {

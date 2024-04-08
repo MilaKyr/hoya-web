@@ -1,5 +1,7 @@
-use crate::data_models::{Proxy, ShopParsingRules};
+use crate::data_models::Proxy;
+use crate::db::in_memory::ShopParsingRules;
 use crate::db::{Database, HoyaPosition, Shop};
+use crate::errors::AppErrors;
 use crate::parser::errors::ParserError;
 use crate::parser::proxy_parser::ProxyManager;
 use crate::parser::traits::Parser;
@@ -36,12 +38,12 @@ impl PositionsParser {
         &self,
         db: &Database,
         proxy: &ProxyManager,
-    ) -> Result<(Shop, Vec<HoyaPosition>), ParserError> {
-        let shop = db.get_top_shop().await.ok_or(ParserError::NoShopsFound)?;
+    ) -> Result<(Shop, Vec<HoyaPosition>), AppErrors> {
+        let shop = db.get_top_shop().await.map_err(AppErrors::DatabaseError)?;
         let shop_rules = db
             .get_shop_parsing_rules(&shop)
             .await
-            .ok_or(ParserError::FailedToFindShopsRules(shop.name.to_string()))?;
+            .map_err(AppErrors::DatabaseError)?;
         let mut n_tries = PARSERS_N_TRIES;
         while n_tries > 0 {
             let positions = self.parse_shop(shop.clone(), &shop_rules, db, proxy).await;
@@ -50,7 +52,7 @@ impl PositionsParser {
                 Err(_) => n_tries -= 1,
             }
         }
-        Err(ParserError::NoProxyAvailable)
+        Err(AppErrors::ParserError(ParserError::NoProxyAvailable))
     }
 
     pub async fn parse_shop(
@@ -59,25 +61,37 @@ impl PositionsParser {
         shop_rules: &ShopParsingRules,
         db: &Database,
         proxy: &ProxyManager,
-    ) -> Result<Vec<HoyaPosition>, ParserError> {
+    ) -> Result<Vec<HoyaPosition>, AppErrors> {
         let selected_proxy = proxy.get(db).await?;
         let shop = shop.clone();
         let shop_rules = shop_rules.clone();
-        let task: tokio::task::JoinHandle<Result<Vec<HoyaPosition>, ParserError>> =
+        let task: tokio::task::JoinHandle<Result<Vec<HoyaPosition>, AppErrors>> =
             spawn_blocking(move || {
                 let mut products = vec![];
-                for opt_category in &shop_rules.url_categories {
+                if shop_rules.url_categories.is_empty() {
                     let new_products = Self::parse_all_products(
                         &shop,
                         selected_proxy.clone(),
                         &shop_rules,
-                        opt_category,
+                        &None,
                     )?;
                     products.extend(new_products);
+                } else {
+                    for opt_category in shop_rules.url_categories.iter() {
+                        let new_products = Self::parse_all_products(
+                            &shop,
+                            selected_proxy.clone(),
+                            &shop_rules,
+                            &Some(opt_category.to_string()),
+                        )?;
+                        products.extend(new_products);
+                    }
                 }
+
                 Ok(products)
             });
-        task.await?
+        task.await
+            .map_err(|e| AppErrors::ParserError(ParserError::TokioTaskError(e)))?
     }
 
     pub fn parse_all_products(
@@ -296,7 +310,7 @@ mod tests {
     fn parse_product_href_works() {
         let shop = create_test_shop();
         let shop_rules = ShopParsingRules {
-            url_categories: vec![None],
+            url_categories: vec![],
             product_lookup: "div.products > div.product".to_string(),
             name_lookup: "span.product_name".to_string(),
             price_lookup: "div.price".to_string(),
@@ -343,7 +357,7 @@ mod tests {
     fn parse_product_div_works() {
         let shop = create_test_shop();
         let shop_rules = ShopParsingRules {
-            url_categories: vec![None],
+            url_categories: vec![],
             product_lookup: "div.products > div.product".to_string(),
             name_lookup: "span.product_name".to_string(),
             price_lookup: "div.price".to_string(),
@@ -389,7 +403,7 @@ mod tests {
     fn parse_data_works() {
         let shop = create_test_shop();
         let shop_rules = ShopParsingRules {
-            url_categories: vec![None],
+            url_categories: vec![],
             product_table_lookup: "div.products".to_string(),
             product_lookup: "div.products > div.product".to_string(),
             name_lookup: "span.product_name".to_string(),

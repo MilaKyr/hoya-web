@@ -7,7 +7,6 @@ use std::fmt::{Display, Formatter};
 use std::path::Path;
 use std::str::FromStr;
 
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Settings {
     pub application: Application,
@@ -56,7 +55,7 @@ impl FromStr for DatabaseType {
         match s {
             "relational" => Ok(DatabaseType::Relational),
             "in_memory" => Ok(DatabaseType::InMemory),
-            &_ => Err(ConfigurationError::UnknownDatabaseType)
+            &_ => Err(ConfigurationError::UnknownDatabaseType),
         }
     }
 }

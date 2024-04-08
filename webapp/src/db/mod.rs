@@ -1,6 +1,6 @@
-use crate::data_models::{Proxy, ProxyParsingRules, ShopParsingRules};
+use crate::data_models::{Proxy, ProxyParsingRules};
 use crate::db::errors::DBError;
-use crate::db::in_memory::{InMemoryDB, PriceRange};
+use crate::db::in_memory::{InMemoryDB, PriceRange, ShopParsingRules};
 use crate::db::relational::entities;
 use crate::db::relational::RelationalDB;
 use rand::distributions::Alphanumeric;
@@ -24,7 +24,7 @@ pub use errors::DBError as DatabaseError;
 
 #[derive(Debug)]
 pub enum Database {
-    InMemory(InMemoryDB),
+    InMemory(Box<InMemoryDB>),
     Relational(RelationalDB),
 }
 
@@ -171,11 +171,11 @@ impl From<entities::shop::Model> for Shop {
 impl Database {
     pub async fn try_from(settings: &DatabaseSettings) -> Result<Self, AppErrors> {
         settings.check_if_valid()?;
-        return match settings.db_type {
+        match settings.db_type {
             DatabaseType::InMemory => {
                 let file_path = settings.path_unchecked();
                 let db = InMemoryDB::from(file_path);
-                Ok(Self::InMemory(db))
+                Ok(Self::InMemory(Box::new(db)))
             }
             DatabaseType::Relational => {
                 let connection_settings = settings.relational_connection_unchecked();
@@ -185,11 +185,11 @@ impl Database {
                 let db = RelationalDB::init(connection);
                 Ok(Self::Relational(db))
             }
-        };
+        }
     }
 
     pub fn new_im_memory() -> Self {
-        Self::InMemory(InMemoryDB::init())
+        Self::InMemory(Box::new(InMemoryDB::init()))
     }
 
     pub fn new_relational(conn: DatabaseConnection) -> Self {
@@ -235,94 +235,75 @@ impl Database {
             .collect())
     }
 
-    pub async fn save_proxies(&self, proxies: Vec<Proxy>) {
-        match self {
-            Database::InMemory(db) => db.set_proxies(proxies),
-            Database::Relational(_db) => todo!(),
-        }
-    }
-
     pub async fn search_with_filter(
         &self,
         filter: SearchFilter,
     ) -> Result<Vec<DatabaseProduct>, DBError> {
         match self {
-            Database::InMemory(in_memory_db) => in_memory_db.search_with_filters(filter),
-            Database::Relational(_db) => todo!(),
+            Database::InMemory(db) => db.search_with_filter(filter),
+            Database::Relational(db) => db.search_with_filter(filter).await,
         }
     }
 
-    pub async fn get_search_filter(&self) -> SearchFilter {
+    pub async fn get_search_filter(&self) -> Result<SearchFilter, DBError> {
         let product_filter = match self {
-            Database::InMemory(in_memory_db) => in_memory_db.get_product_filter(),
-            Database::Relational(_db) => todo!(),
-        };
-        SearchFilter {
+            Database::InMemory(db) => db.get_product_filter(),
+            Database::Relational(db) => db.get_product_filter().await,
+        }?;
+        Ok(SearchFilter {
             product: Some(product_filter),
             ..Default::default()
+        })
+    }
+
+    pub async fn save_positions(&self, positions: Vec<HoyaPosition>) -> Result<(), DBError> {
+        match self {
+            Database::InMemory(db) => db.save_positions(positions),
+            Database::Relational(db) => db.save_positions(positions).await,
         }
     }
 
-    pub async fn get_shop_by(&self, id: u32) -> Option<Shop> {
+    pub async fn get_top_shop(&self) -> Result<Shop, DBError> {
         match self {
-            Database::InMemory(in_memory_db) => in_memory_db.get_shop_by(id),
-            Database::Relational(_db) => todo!(),
+            Database::InMemory(db) => db.get_top_shop(),
+            Database::Relational(db) => db.get_top_shop().await,
         }
     }
 
-    pub async fn set_positions(&self, name: String, hoya_positions: Vec<HoyaPosition>) {
+    pub async fn push_shop_back(&self, shop: &Shop) -> Result<(), DBError> {
         match self {
-            Database::InMemory(in_memory_db) => in_memory_db.set_positions(name, hoya_positions),
-            Database::Relational(_db) => todo!(),
+            Database::InMemory(db) => db.push_shop_back(shop),
+            Database::Relational(db) => db.push_shop_back(shop).await,
         }
     }
 
-    pub async fn get_positions_all(&self) -> HashMap<String, Vec<HoyaPosition>> {
+    pub async fn get_shop_parsing_rules(&self, shop: &Shop) -> Result<ShopParsingRules, DBError> {
         match self {
-            Database::InMemory(in_memory_db) => in_memory_db.get_positions_all(),
-            Database::Relational(_db) => todo!(),
+            Database::InMemory(db) => db.get_shop_parsing_rules(shop),
+            Database::Relational(db) => db.get_shop_parsing_rules(shop).await,
         }
     }
 
-    pub async fn get_top_shop(&self) -> Option<Shop> {
+    pub async fn save_proxies(&self, new_proxies: Vec<Proxy>) -> Result<(), DBError> {
         match self {
-            Database::InMemory(in_memory_db) => in_memory_db.get_top_shop(),
-            Database::Relational(_db) => todo!(),
+            Database::InMemory(db) => db.save_proxies(new_proxies),
+            Database::Relational(db) => db.save_proxies(new_proxies).await,
         }
     }
 
-    pub async fn push_shop_back(&self, shop: &Shop) {
+    pub async fn get_proxies(&self) -> Result<Vec<Proxy>, DBError> {
         match self {
-            Database::InMemory(in_memory_db) => in_memory_db.push_shop_back(shop),
-            Database::Relational(_db) => todo!(),
+            Database::InMemory(db) => db.get_proxies(),
+            Database::Relational(db) => db.get_proxies().await,
         }
     }
 
-    pub async fn get_shop_parsing_rules(&self, shop: &Shop) -> Option<ShopParsingRules> {
+    pub async fn get_proxy_parsing_rules(
+        &self,
+    ) -> Result<HashMap<Url, ProxyParsingRules>, DBError> {
         match self {
-            Database::InMemory(in_memory_db) => in_memory_db.get_shop_parsing_rules(shop),
-            Database::Relational(_db) => todo!(),
-        }
-    }
-
-    pub async fn set_proxies(&self, new_proxies: Vec<Proxy>) {
-        match self {
-            Database::InMemory(in_memory_db) => in_memory_db.set_proxies(new_proxies),
-            Database::Relational(_db) => todo!(),
-        }
-    }
-
-    pub async fn get_proxies(&self) -> Vec<Proxy> {
-        match self {
-            Database::InMemory(in_memory_db) => in_memory_db.get_proxies(),
-            Database::Relational(_db) => todo!(),
-        }
-    }
-
-    pub async fn get_proxy_parsing_rules(&self) -> HashMap<Url, ProxyParsingRules> {
-        match self {
-            Database::InMemory(in_memory_db) => in_memory_db.get_proxy_parsing_rules(),
-            Database::Relational(_db) => todo!(),
+            Database::InMemory(db) => db.get_proxy_parsing_rules(),
+            Database::Relational(db) => db.get_proxy_parsing_rules().await,
         }
     }
 }

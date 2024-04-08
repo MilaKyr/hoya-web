@@ -94,8 +94,12 @@ pub async fn search(
     Ok(Json(products))
 }
 
-pub async fn search_filter(State(state): State<AppState>) -> Result<Json<SearchFilter>> {
-    let filter = state.db.get_search_filter().await;
+pub async fn search_filter(State(state): State<AppState>) -> Result<Json<SearchFilter>, Error> {
+    let filter = state
+        .db
+        .get_search_filter()
+        .await
+        .map_err(|e| Error::AppError(AppErrors::DatabaseError(e)))?;
     Ok(Json(filter))
 }
 
