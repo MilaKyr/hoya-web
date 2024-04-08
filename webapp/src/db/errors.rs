@@ -8,7 +8,7 @@ pub enum DBError {
     UnknownProduct,
     #[error("no historic prices found")]
     PricesNotFound,
-    #[error("no shops found")]
+    #[error("shop not found")]
     ShopNotFound,
     #[error("no parsing rules found")]
     ParsingRulesNotFound,

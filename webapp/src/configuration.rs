@@ -61,7 +61,7 @@ impl FromStr for DatabaseType {
 }
 
 impl DatabaseSettings {
-    pub fn check_if_valid(&self) -> Result<(), ConfigurationError> {
+    pub fn is_valid(&self) -> Result<(), ConfigurationError> {
         match self.db_type {
             DatabaseType::InMemory => match &self.file_path {
                 None => return Err(ConfigurationError::DataFileNotFound),

@@ -170,7 +170,7 @@ impl From<entities::shop::Model> for Shop {
 
 impl Database {
     pub async fn try_from(settings: &DatabaseSettings) -> Result<Self, AppErrors> {
-        settings.check_if_valid()?;
+        settings.is_valid()?;
         match settings.db_type {
             DatabaseType::InMemory => {
                 let file_path = settings.path_unchecked();
