@@ -6,7 +6,6 @@ use crate::db::relational::RelationalDB;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use sea_orm::Database as SeaOrmDB;
-use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
@@ -174,7 +173,7 @@ impl Database {
         match settings.db_type {
             DatabaseType::InMemory => {
                 let file_path = settings.path_unchecked();
-                let db = InMemoryDB::from(file_path);
+                let db = InMemoryDB::try_from(file_path)?;
                 Ok(Self::InMemory(Box::new(db)))
             }
             DatabaseType::Relational => {
@@ -186,14 +185,6 @@ impl Database {
                 Ok(Self::Relational(db))
             }
         }
-    }
-
-    pub fn new_im_memory() -> Self {
-        Self::InMemory(Box::new(InMemoryDB::init()))
-    }
-
-    pub fn new_relational(conn: DatabaseConnection) -> Self {
-        Self::Relational(RelationalDB::init(conn))
     }
 
     pub async fn all_products(&self) -> Result<Vec<DatabaseProduct>, DBError> {

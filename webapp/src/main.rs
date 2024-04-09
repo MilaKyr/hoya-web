@@ -4,23 +4,13 @@ use tokio::time::MissedTickBehavior::Skip;
 use webapp::configuration::get_configuration;
 use webapp::create_app;
 use webapp::db::Database;
-use webapp::errors::Error;
-
-async fn bind_address(host: &str, port: u16) -> Result<TcpListener, Error> {
-    let address = format!("{}:{}", host, port);
-    let listener = TcpListener::bind(address).await?;
-    Ok(listener)
-}
 
 #[tokio::main]
 async fn main() {
     let configuration = get_configuration().expect("Failed to read configuration");
-    let listener = bind_address(
-        &configuration.application.host,
-        configuration.application.port,
-    )
-    .await
-    .expect("Failed to create socket address");
+    let listener = TcpListener::bind(&configuration.application.bind_address())
+                                         .await
+                                         .expect("Failed to create socket address");
 
     let db = Database::try_from(&configuration.database)
         .await

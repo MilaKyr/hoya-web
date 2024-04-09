@@ -44,7 +44,7 @@ pub async fn product(
         .db
         .get_product_by(id.to_owned())
         .await
-        .map_err(|_| Error::AppError(AppErrors::UnknownProduct))?;
+        .map_err(|e| Error::AppError(AppErrors::DatabaseError(e)))?;
     let listings = state
         .db
         .get_positions_for(&product)

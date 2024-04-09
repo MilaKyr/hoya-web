@@ -4,6 +4,8 @@ use thiserror::Error;
 pub enum DBError {
     #[error("transparent")]
     Relational(#[from] sea_orm::DbErr),
+    #[error("transparent")]
+    InMemoryError(#[from] InMemoryError),
     #[error("unknown product")]
     UnknownProduct,
     #[error("no historic prices found")]
@@ -14,4 +16,12 @@ pub enum DBError {
     ParsingRulesNotFound,
     #[error("no positions found")]
     NoProductShopPositions,
+}
+
+#[derive(Error, Debug)]
+pub enum InMemoryError {
+    #[error("io error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("failed to read with serde: {0}")]
+    SerdeError(#[from] serde_json::error::Error),
 }

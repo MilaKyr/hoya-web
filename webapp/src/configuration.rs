@@ -19,8 +19,16 @@ pub struct Application {
     pub host: String,
     pub port: u16,
 }
+
+impl Application {
+    pub fn bind_address(&self) -> String {
+        format!("{}:{}", self.host, self.port)
+    }
+}
+
+
 #[serde_as]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct DatabaseSettings {
     #[serde_as(as = "DisplayFromStr")]
     pub db_type: DatabaseType,
@@ -37,6 +45,12 @@ pub struct DatabaseSettings {
 pub enum DatabaseType {
     InMemory,
     Relational,
+}
+
+impl Default for DatabaseType {
+    fn default() -> Self {
+        Self::InMemory
+    }
 }
 
 impl Display for DatabaseType {

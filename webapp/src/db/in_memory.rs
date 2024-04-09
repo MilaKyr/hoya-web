@@ -1,5 +1,5 @@
 use crate::data_models::{Proxy, ProxyParsingRules, UrlHolders};
-use crate::db::errors::DBError;
+use crate::db::errors::{DBError, InMemoryError};
 use crate::db::map_json_as_pairs::map_as_pairs;
 use crate::db::{DatabaseProduct, HoyaPosition, ProductFilter, SearchFilter, SearchQuery, Shop};
 use serde;
@@ -83,36 +83,24 @@ pub struct InMemoryDB {
     pub price_range: PriceRange,
 }
 
-impl From<String> for InMemoryDB {
-    fn from(file_path: String) -> Self {
-        let data = fs::read_to_string(file_path).expect("Failed to read file");
-        let db: FileStructure = serde_json::from_str(&data).expect("Fail to read JSON");
+impl TryFrom<String> for InMemoryDB {
+    type Error = DBError;
+
+    fn try_from(file_path: String) -> Result<Self, Self::Error> {
+        let data = fs::read_to_string(file_path).
+            map_err(|e| DBError::InMemoryError(InMemoryError::IoError(e)))?;
+        let db: FileStructure = serde_json::from_str(&data)
+            .map_err(|e| DBError::InMemoryError(InMemoryError::SerdeError(e)))?;
         let mut proxy_parsing_rules = HashMap::new();
-        for (url, rules) in db.proxy_parsing_rules.into_iter() {
-            if let Ok(url) = Url::from_str(&url) {
-                proxy_parsing_rules.insert(url, rules);
+        for (url, rules) in db.proxy_parsing_rules.iter() {
+            if let Ok(url) = Url::from_str(url) {
+                proxy_parsing_rules.insert(url, rules.to_owned());
             }
         }
-        let mut min_price = 0.;
-        let mut max_price = 0.;
-        for (_, positions) in db.positions.iter() {
-            let prices: Vec<f32> = positions.iter().map(|pos| pos.price).collect();
-            let curr_min = prices
-                .iter()
-                .min_by(|a, b| a.partial_cmp(b).expect("Failed to compare"))
-                .unwrap_or(&0.0);
-            if *curr_min < min_price {
-                min_price = *curr_min;
-            }
-            let curr_max = prices
-                .iter()
-                .min_by(|a, b| b.partial_cmp(a).expect("Failed to compare"))
-                .unwrap_or(&0.0);
-            if *curr_max > max_price {
-                max_price = *curr_max;
-            }
-        }
-        Self {
+        let positions = db.positions.values().flatten();
+        let mut prices: Vec<_> = positions.into_iter().map(|pos| pos.price).collect();
+        prices.sort_by(|a, b| a.partial_cmp(b).expect("Tried to compare a NaN"));
+        Ok(Self {
             proxies: RwLock::new(db.proxies),
             shops: RwLock::new(VecDeque::from(db.shops)),
             shops_parsing_rules: RwLock::new(db.shops_parsing_rules),
@@ -122,58 +110,14 @@ impl From<String> for InMemoryDB {
             historic_prices: Default::default(),
             proxy_parsing_rules: RwLock::new(proxy_parsing_rules),
             price_range: PriceRange {
-                min: min_price,
-                max: max_price,
+                min: prices.first().copied().unwrap_or_default(),
+                max: prices.last().copied().unwrap_or_default(),
             },
-        }
+        })
     }
 }
 
 impl InMemoryDB {
-    pub fn init() -> Self {
-        let data = include_str!("data.json");
-        let db: FileStructure = serde_json::from_str(data).expect("Fail to read JSON");
-        let mut proxy_parsing_rules = HashMap::new();
-        for (url, rules) in db.proxy_parsing_rules.into_iter() {
-            if let Ok(url) = Url::from_str(&url) {
-                proxy_parsing_rules.insert(url, rules);
-            }
-        }
-        let mut min_price = 0.;
-        let mut max_price = 0.;
-        for (_, positions) in db.positions.iter() {
-            let prices: Vec<f32> = positions.iter().map(|pos| pos.price).collect();
-            let curr_min = prices
-                .iter()
-                .min_by(|a, b| a.partial_cmp(b).expect("Failed to compare"))
-                .unwrap_or(&0.0);
-            if *curr_min < min_price {
-                min_price = *curr_min;
-            }
-            let curr_max = prices
-                .iter()
-                .min_by(|a, b| b.partial_cmp(a).expect("Failed to compare"))
-                .unwrap_or(&0.0);
-            if *curr_max > max_price {
-                max_price = *curr_max;
-            }
-        }
-        Self {
-            proxies: RwLock::new(db.proxies),
-            shops: RwLock::new(VecDeque::from(db.shops)),
-            shops_parsing_rules: RwLock::new(db.shops_parsing_rules),
-            pictures: RwLock::new(db.pictures),
-            positions: RwLock::new(db.positions),
-            products: RwLock::new(vec![]), // TODO
-            historic_prices: Default::default(),
-            proxy_parsing_rules: RwLock::new(proxy_parsing_rules),
-            price_range: PriceRange {
-                min: min_price,
-                max: max_price,
-            },
-        }
-    }
-
     pub fn save_positions(&self, positions: Vec<HoyaPosition>) -> Result<(), DBError> {
         if let Some(pos1) = positions.first() {
             let mut all_positions = self.positions.write().unwrap();
@@ -320,37 +264,35 @@ mod tests {
         }
     }
 
-    // TODO fix this test
-    // #[test]
-    // fn set_get_positions_all_works() {
-    //     let db = InMemoryDB::default();
-    //     let name = "a".to_string();
-    //     let shop = create_test_shop("test shop");
-    //     let hoya_positions = vec![HoyaPosition::new(
-    //         shop,
-    //         "full name".to_string(),
-    //         1.2,
-    //         "https://example.com".to_string(),
-    //     )];
-    //
-    //     db.set_positions("a".to_string(), hoya_positions.clone());
-    //
-    //     let mut expected_result = HashMap::new();
-    //     expected_result.insert(name.to_string(), hoya_positions.clone());
-    //     let result = db.get_positions_all();
-    //     assert_eq!(result, expected_result);
-    // }
+    #[test]
+    fn set_get_positions_all_works() {
+        let db = InMemoryDB::default();
+        let name = "test shop";
+        let shop = create_test_shop(name);
+        let hoya_positions = vec![HoyaPosition::new(
+            shop,
+            "full name".to_string(),
+            1.2,
+            "https://example.com".to_string(),
+        )];
 
-    // TODO fix this test
-    // #[test]
-    // fn set_get_proxies_works() {
-    //     let expected_result = vec![Proxy::dummy("a"), Proxy::dummy("b"), Proxy::dummy("c")];
-    //     let db = InMemoryDB::default();
-    //     db.set_proxies(expected_result.clone());
-    //
-    //     let result = db.get_proxies().expect("Failed to get proxies");
-    //     assert_eq!(result, expected_result);
-    // }
+        db.save_positions(hoya_positions.clone()).expect("Failed to save positions");
+
+        let mut expected_result = HashMap::new();
+        expected_result.insert(name.to_string(), hoya_positions);
+        let result = db.get_positions_all();
+        assert_eq!(result, expected_result);
+    }
+
+    #[test]
+    fn set_get_proxies_works() {
+        let expected_result = vec![Proxy::dummy("a"), Proxy::dummy("b"), Proxy::dummy("c")];
+        let db = InMemoryDB::default();
+        db.save_proxies(expected_result.clone()).expect("Failed to save proxies");
+
+        let result = db.get_proxies().expect("Failed to get proxies");
+        assert_eq!(result, expected_result);
+    }
 
     #[test]
     fn get_proxy_parsing_rules_work() {
