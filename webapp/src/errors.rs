@@ -26,7 +26,6 @@ pub enum AppErrors {
     ConfigurationError(#[from] ConfigurationError),
 }
 
-
 #[derive(Error, Debug)]
 pub enum ConfigurationError {
     #[error("one or more settings are missed: provider, host, port, user, password")]
@@ -58,17 +57,8 @@ impl IntoResponse for AppErrors {
 
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
-        if let Error::AppError(err) = self {
-            return err.into_response();
+        match self {
+            Error::AppError(err) => err.into_response(),
         }
-        let (status, error_message) = match self {
-            Error::AppError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()),
-        };
-
-        let body = Json(json!({
-            "error": error_message,
-        }));
-
-        (status, body).into_response()
     }
 }

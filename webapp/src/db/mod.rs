@@ -114,22 +114,17 @@ impl HoyaPosition {
         }
     }
 
-    pub fn init(
+    pub fn try_init(
         position: entities::shopposition::Model,
         shop: Shop,
         product: &DatabaseProduct,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, DBError> {
+        Ok(Self {
             shop,
             full_name: product.name.to_string(),
-            price: position
-                .price
-                .unwrap_or_default()
-                .to_string()
-                .parse::<f32>()
-                .unwrap(),
+            price: position.price.to_string().parse()?,
             url: position.url.to_string(),
-        }
+        })
     }
 }
 

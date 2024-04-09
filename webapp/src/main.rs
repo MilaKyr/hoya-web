@@ -9,8 +9,8 @@ use webapp::db::Database;
 async fn main() {
     let configuration = get_configuration().expect("Failed to read configuration");
     let listener = TcpListener::bind(&configuration.application.bind_address())
-                                         .await
-                                         .expect("Failed to create socket address");
+        .await
+        .expect("Failed to create socket address");
 
     let db = Database::try_from(&configuration.database)
         .await

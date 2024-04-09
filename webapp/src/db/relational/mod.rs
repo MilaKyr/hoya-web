@@ -74,7 +74,7 @@ impl RelationalDB {
         let mut product_positions = vec![];
         for position in positions.into_iter() {
             if let Some(shop_info) = shops_hm.get(&position.shop_id).cloned() {
-                let prod = HoyaPosition::init(position, shop_info, &db_product);
+                let prod = HoyaPosition::try_init(position, shop_info, &db_product)?;
                 product_positions.push(prod)
             }
         }
@@ -224,11 +224,12 @@ impl RelationalDB {
         let models: Vec<crate::db::entities::shopposition::ActiveModel> = positions
             .into_iter()
             .map(|pos| {
+                let decimal_price = Decimal::from_f32_retain(pos.price).unwrap_or_default();
                 shopposition::ActiveModel {
                     product_id: Set(0), // TODO
                     shop_id: Set(pos.shop.id as i32),
                     image: Set(None), // TODO
-                    price: Set(Decimal::from_f32_retain(pos.price)),
+                    price: Set(decimal_price),
                     url: Set(pos.url.to_string()),
                     ..Default::default()
                 }

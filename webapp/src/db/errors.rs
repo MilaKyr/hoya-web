@@ -16,6 +16,10 @@ pub enum DBError {
     ParsingRulesNotFound,
     #[error("no positions found")]
     NoProductShopPositions,
+    #[error("transparent")]
+    PriceError(#[from] std::num::ParseFloatError),
+    // #[error("transparent")]
+    // PriceError(#[from] std::num::ParseFloatError),
 }
 
 #[derive(Error, Debug)]

@@ -20,7 +20,7 @@ CREATE TABLE ShopPosition (
     product_id INT NOT NULL,
     shop_id  INT NOT NULL,
     image VARCHAR(512),
-    price DECIMAL(6, 2),
+    price DECIMAL(6, 2) NOT NULL,
     url VARCHAR(256) NOT NULL,
     FOREIGN KEY (product_id) REFERENCES Product(id) ON DELETE CASCADE,
     FOREIGN KEY (shop_id) REFERENCES Shop(id) ON DELETE CASCADE

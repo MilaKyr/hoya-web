@@ -26,7 +26,6 @@ impl Application {
     }
 }
 
-
 #[serde_as]
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct DatabaseSettings {

@@ -10,8 +10,8 @@ pub struct Model {
     pub product_id: i32,
     pub shop_id: i32,
     pub image: Option<String>,
-    #[sea_orm(column_type = "Decimal(Some((6, 2)))", nullable)]
-    pub price: Option<Decimal>,
+    #[sea_orm(column_type = "Decimal(Some((6, 2)))")]
+    pub price: Decimal,
     pub url: String,
 }
 

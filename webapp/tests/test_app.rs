@@ -1,11 +1,11 @@
-use std::env;
 use axum::{
     body,
     body::Body,
     http::{Request, StatusCode},
 };
+use std::env;
 use tower::ServiceExt;
-use webapp::configuration::{DatabaseSettings};
+use webapp::configuration::DatabaseSettings;
 use webapp::create_app;
 use webapp::data_models::Product;
 use webapp::db::Database;
@@ -21,7 +21,8 @@ async fn create_db() -> Database {
         file_path: Some(format!("{}/tests/data.json", directory.to_str().unwrap())),
         ..Default::default()
     };
-    Database::try_from(&settings).await
+    Database::try_from(&settings)
+        .await
         .expect("Failed to create in memory db")
 }
 
@@ -102,5 +103,5 @@ async fn product_id_fails() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }

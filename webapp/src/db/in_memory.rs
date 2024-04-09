@@ -87,8 +87,8 @@ impl TryFrom<String> for InMemoryDB {
     type Error = DBError;
 
     fn try_from(file_path: String) -> Result<Self, Self::Error> {
-        let data = fs::read_to_string(file_path).
-            map_err(|e| DBError::InMemoryError(InMemoryError::IoError(e)))?;
+        let data = fs::read_to_string(file_path)
+            .map_err(|e| DBError::InMemoryError(InMemoryError::IoError(e)))?;
         let db: FileStructure = serde_json::from_str(&data)
             .map_err(|e| DBError::InMemoryError(InMemoryError::SerdeError(e)))?;
         let mut proxy_parsing_rules = HashMap::new();
@@ -276,7 +276,8 @@ mod tests {
             "https://example.com".to_string(),
         )];
 
-        db.save_positions(hoya_positions.clone()).expect("Failed to save positions");
+        db.save_positions(hoya_positions.clone())
+            .expect("Failed to save positions");
 
         let mut expected_result = HashMap::new();
         expected_result.insert(name.to_string(), hoya_positions);
@@ -288,7 +289,8 @@ mod tests {
     fn set_get_proxies_works() {
         let expected_result = vec![Proxy::dummy("a"), Proxy::dummy("b"), Proxy::dummy("c")];
         let db = InMemoryDB::default();
-        db.save_proxies(expected_result.clone()).expect("Failed to save proxies");
+        db.save_proxies(expected_result.clone())
+            .expect("Failed to save proxies");
 
         let result = db.get_proxies().expect("Failed to get proxies");
         assert_eq!(result, expected_result);
