@@ -1,7 +1,14 @@
-use crate::data_models::{Proxy, ProxyParsingRules, UrlHolders};
+use crate::data_models::UrlHolders;
+use crate::db::entities::{
+    parsingcategory::Model as CategoryModel, parsinglookup::Model as LookupModel,
+    shopparsingrules::Model as ShorParsingRulesModel,
+};
 use crate::db::errors::{DBError, InMemoryError};
 use crate::db::map_json_as_pairs::map_as_pairs;
-use crate::db::{DatabaseProduct, HoyaPosition, ProductFilter, SearchFilter, SearchQuery, Shop};
+use crate::db::{
+    DatabaseProduct, HoyaPosition, ProductFilter, Proxy, ProxyParsingRules, SearchFilter,
+    SearchQuery, Shop,
+};
 use serde;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -37,6 +44,27 @@ pub struct ShopParsingRules {
 }
 
 impl ShopParsingRules {
+    pub fn with(
+        rules: ShorParsingRulesModel,
+        categories: Vec<CategoryModel>,
+        lookups: LookupModel,
+    ) -> Self {
+        ShopParsingRules {
+            url_categories: categories
+                .into_iter()
+                .map(|cat| cat.category.clone())
+                .collect(),
+            parsing_url: rules.url,
+            max_page_lookup: lookups.max_page.to_string(),
+            product_table_lookup: lookups.product_table.to_string(),
+            product_lookup: lookups.product.to_string(),
+            name_lookup: lookups.name.to_string(),
+            price_lookup: lookups.price.to_string(),
+            url_lookup: lookups.url.to_string(),
+            look_for_href: rules.look_for_href.unwrap_or_default(),
+            sleep_timeout_sec: rules.sleep_timeout_sec.map(|val| val as u64),
+        }
+    }
     pub fn get_shop_parsing_url(&self, page_number: u32, category: &Option<String>) -> String {
         let mut url = self.parsing_url.clone();
         url = url.replace(&UrlHolders::PageID.to_string(), &page_number.to_string());

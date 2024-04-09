@@ -31,7 +31,7 @@ CREATE TABLE HistoricPrice
     id SERIAL PRIMARY KEY,
     product_id INT NOT NULL,
     date DATE NOT NULL,
-    avg_price DECIMAL(6, 3),
+    avg_price DECIMAL(6, 3) NOT NULL,
     FOREIGN KEY (product_id) REFERENCES Product(id) ON DELETE CASCADE
 );
 

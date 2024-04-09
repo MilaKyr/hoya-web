@@ -1,5 +1,4 @@
 use crate::db::{HoyaPosition, Shop};
-use crate::parser::errors::ParserError;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
@@ -93,59 +92,6 @@ impl From<&HoyaPosition> for Listing {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ProxyParsingRules {
-    pub table_lookup: String,
-    pub head_lookup: String,
-    pub row_lookup: String,
-    pub data_lookup: String,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Proxy {
-    pub ip: String,
-    pub port: u16,
-    pub https: bool,
-}
-
-impl Display for Proxy {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let protocol = if self.https { "https" } else { "http" };
-        write!(f, "{}://{}:{}", protocol, self.ip, self.port)
-    }
-}
-
-impl Proxy {
-    pub fn dummy(ip: &str) -> Self {
-        Self {
-            ip: ip.to_string(),
-            port: 1,
-            https: false,
-        }
-    }
-}
-
-impl TryFrom<Vec<(&String, &String)>> for Proxy {
-    type Error = ParserError;
-
-    fn try_from(row: Vec<(&String, &String)>) -> Result<Self, Self::Error> {
-        let (mut ip, mut port, mut https) = (None, None, None);
-        for (name, value) in row.into_iter() {
-            match name.as_str() {
-                "IP Address" => ip = Some(value.to_string()),
-                "Port" => port = value.parse::<u16>().ok(),
-                "Https" => https = Some(value == "yes"),
-                _ => {}
-            }
-        }
-        Ok(Self {
-            ip: ip.ok_or(ParserError::NotAProxyRow)?,
-            port: port.ok_or(ParserError::NotAProxyRow)?,
-            https: https.ok_or(ParserError::NotAProxyRow)?,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,55 +145,5 @@ mod tests {
         let url = shop_parsing_rules.get_shop_parsing_url(2, &None);
         let expected_url = "https://example.com/products/?page=2".to_string();
         assert_eq!(url, expected_url);
-    }
-
-    #[test]
-    fn proxy_http_to_string_works() {
-        let proxy = Proxy {
-            ip: "127.0.0.1".to_string(),
-            port: 80,
-            https: false,
-        };
-        let proxy_url = proxy.to_string();
-        let expected_url = "http://127.0.0.1:80".to_string();
-        assert_eq!(proxy_url, expected_url);
-    }
-
-    #[test]
-    fn proxy_https_to_string_works() {
-        let proxy = Proxy {
-            ip: "127.0.0.1".to_string(),
-            port: 80,
-            https: true,
-        };
-        let proxy_url = proxy.to_string();
-        let expected_url = "https://127.0.0.1:80".to_string();
-        assert_eq!(proxy_url, expected_url);
-    }
-
-    #[test]
-    fn proxy_from_row_http_works() {
-        let proxy = Proxy::try_from(vec![
-            (&"IP Address".to_string(), &"127.0.0.1".to_string()),
-            (&"Port".to_string(), &"6464".to_string()),
-            (&"Https".to_string(), &"no".to_string()),
-        ])
-        .expect("Failed to create proxy");
-        let proxy_url = proxy.to_string();
-        let expected_url = "http://127.0.0.1:6464".to_string();
-        assert_eq!(proxy_url, expected_url);
-    }
-
-    #[test]
-    fn proxy_from_row_https_works() {
-        let proxy = Proxy::try_from(vec![
-            (&"IP Address".to_string(), &"127.0.0.1".to_string()),
-            (&"Port".to_string(), &"6464".to_string()),
-            (&"Https".to_string(), &"yes".to_string()),
-        ])
-        .expect("Failed to create proxy");
-        let proxy_url = proxy.to_string();
-        let expected_url = "https://127.0.0.1:6464".to_string();
-        assert_eq!(proxy_url, expected_url);
     }
 }

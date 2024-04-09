@@ -1,15 +1,14 @@
-use crate::data_models::{Proxy, ProxyParsingRules};
 use crate::db::errors::DBError;
 use crate::db::in_memory::{InMemoryDB, PriceRange, ShopParsingRules};
 use crate::db::relational::entities;
 use crate::db::relational::RelationalDB;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
-use sea_orm::Database as SeaOrmDB;
+use sea_orm::{Database as SeaOrmDB, FromQueryResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
-use std::fmt::Display;
+use std::fmt::{Display, Formatter};
 use url::Url;
 
 mod errors;
@@ -18,7 +17,9 @@ mod map_json_as_pairs;
 mod relational;
 
 use crate::configuration::{DatabaseSettings, DatabaseType};
+use crate::db::relational::entities::proxyparsingrules::Model;
 use crate::errors::AppErrors;
+use crate::parser::errors::ParserError;
 pub use errors::DBError as DatabaseError;
 
 #[derive(Debug)]
@@ -26,8 +27,7 @@ pub enum Database {
     InMemory(Box<InMemoryDB>),
     Relational(RelationalDB),
 }
-
-#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, Deserialize, Serialize, FromQueryResult)]
 pub struct ProductFilter {
     pub price_min: Option<f32>,
     pub price_max: Option<f32>,
@@ -162,6 +162,82 @@ impl From<entities::shop::Model> for Shop {
     }
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProxyParsingRules {
+    pub table_lookup: String,
+    pub head_lookup: String,
+    pub row_lookup: String,
+    pub data_lookup: String,
+}
+
+impl From<entities::proxyparsingrules::Model> for ProxyParsingRules {
+    fn from(rules: Model) -> Self {
+        Self {
+            table_lookup: rules.table_name.to_string(),
+            head_lookup: rules.head.to_string(),
+            row_lookup: rules.row.to_string(),
+            data_lookup: rules.data.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Proxy {
+    pub ip: String,
+    pub port: u16,
+    pub https: bool,
+}
+
+impl Display for Proxy {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let protocol = if self.https { "https" } else { "http" };
+        write!(f, "{}://{}:{}", protocol, self.ip, self.port)
+    }
+}
+
+impl Proxy {
+    pub fn dummy(ip: &str) -> Self {
+        Self {
+            ip: ip.to_string(),
+            port: 1,
+            https: false,
+        }
+    }
+}
+
+impl TryFrom<Vec<(&String, &String)>> for Proxy {
+    type Error = ParserError;
+
+    fn try_from(row: Vec<(&String, &String)>) -> Result<Self, Self::Error> {
+        let (mut ip, mut port, mut https) = (None, None, None);
+        for (name, value) in row.into_iter() {
+            match name.as_str() {
+                "IP Address" => ip = Some(value.to_string()),
+                "Port" => port = value.parse::<u16>().ok(),
+                "Https" => https = Some(value == "yes"),
+                _ => {}
+            }
+        }
+        Ok(Self {
+            ip: ip.ok_or(ParserError::NotAProxyRow)?,
+            port: port.ok_or(ParserError::NotAProxyRow)?,
+            https: https.ok_or(ParserError::NotAProxyRow)?,
+        })
+    }
+}
+
+impl TryFrom<Url> for Proxy {
+    type Error = DBError;
+
+    fn try_from(url: Url) -> Result<Self, Self::Error> {
+        Ok(Self {
+            ip: url.host().ok_or(DBError::UrlParseError)?.to_string(),
+            port: url.port().ok_or(DBError::UrlParseError)?,
+            https: url.scheme() == "https",
+        })
+    }
+}
+
 impl Database {
     pub async fn try_from(settings: &DatabaseSettings) -> Result<Self, AppErrors> {
         settings.is_valid()?;
@@ -291,5 +367,60 @@ impl Database {
             Database::InMemory(db) => db.get_proxy_parsing_rules(),
             Database::Relational(db) => db.get_proxy_parsing_rules().await,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn proxy_http_to_string_works() {
+        let proxy = Proxy {
+            ip: "127.0.0.1".to_string(),
+            port: 80,
+            https: false,
+        };
+        let proxy_url = proxy.to_string();
+        let expected_url = "http://127.0.0.1:80".to_string();
+        assert_eq!(proxy_url, expected_url);
+    }
+
+    #[test]
+    fn proxy_https_to_string_works() {
+        let proxy = Proxy {
+            ip: "127.0.0.1".to_string(),
+            port: 80,
+            https: true,
+        };
+        let proxy_url = proxy.to_string();
+        let expected_url = "https://127.0.0.1:80".to_string();
+        assert_eq!(proxy_url, expected_url);
+    }
+
+    #[test]
+    fn proxy_from_row_http_works() {
+        let proxy = Proxy::try_from(vec![
+            (&"IP Address".to_string(), &"127.0.0.1".to_string()),
+            (&"Port".to_string(), &"6464".to_string()),
+            (&"Https".to_string(), &"no".to_string()),
+        ])
+        .expect("Failed to create proxy");
+        let proxy_url = proxy.to_string();
+        let expected_url = "http://127.0.0.1:6464".to_string();
+        assert_eq!(proxy_url, expected_url);
+    }
+
+    #[test]
+    fn proxy_from_row_https_works() {
+        let proxy = Proxy::try_from(vec![
+            (&"IP Address".to_string(), &"127.0.0.1".to_string()),
+            (&"Port".to_string(), &"6464".to_string()),
+            (&"Https".to_string(), &"yes".to_string()),
+        ])
+        .expect("Failed to create proxy");
+        let proxy_url = proxy.to_string();
+        let expected_url = "https://127.0.0.1:6464".to_string();
+        assert_eq!(proxy_url, expected_url);
     }
 }

@@ -18,6 +18,10 @@ pub enum DBError {
     NoProductShopPositions,
     #[error("transparent")]
     PriceError(#[from] std::num::ParseFloatError),
+    #[error("transparent")]
+    DateParseError(#[from] time::error::Parse),
+    #[error("failed to parse string as url")]
+    UrlParseError,
 }
 
 #[derive(Error, Debug)]

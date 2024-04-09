@@ -9,8 +9,8 @@ pub struct Model {
     pub id: i32,
     pub product_id: i32,
     pub date: Date,
-    #[sea_orm(column_type = "Decimal(Some((6, 3)))", nullable)]
-    pub avg_price: Option<Decimal>,
+    #[sea_orm(column_type = "Decimal(Some((6, 3)))")]
+    pub avg_price: Decimal,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

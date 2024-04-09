@@ -1,4 +1,4 @@
-use crate::data_models::Proxy;
+use crate::db::Proxy;
 use crate::parser::errors::ParserError;
 use reqwest::blocking::Client;
 use reqwest::redirect::Policy;

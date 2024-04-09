@@ -1,12 +1,11 @@
 pub mod entities;
 
-use crate::data_models::ProxyParsingRules;
 use entities::{prelude::*, *};
 use sea_orm::prelude::Decimal;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, DbBackend, EntityTrait,
-    LoaderTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
+    FromQueryResult, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
 };
 use std::collections::HashMap;
 use time::macros::format_description;
@@ -15,24 +14,10 @@ use url::Url;
 
 use crate::db::errors::DBError;
 use crate::db::in_memory::ShopParsingRules;
-use crate::db::{DatabaseProduct, HoyaPosition, ProductFilter, SearchFilter, Shop as InnerShop};
-
-use sea_orm::FromQueryResult;
-
-#[derive(FromQueryResult)]
-struct PriceRange {
-    min: f32,
-    max: f32,
-}
-
-impl From<PriceRange> for ProductFilter {
-    fn from(price_model: PriceRange) -> Self {
-        Self {
-            price_min: price_model.min.into(),
-            price_max: price_model.max.into(),
-        }
-    }
-}
+use crate::db::{
+    DatabaseProduct, HoyaPosition, ProductFilter, Proxy as InnerProxy, ProxyParsingRules,
+    SearchFilter, Shop as InnerShop,
+};
 
 #[derive(Debug, Default)]
 pub struct RelationalDB {
@@ -61,21 +46,16 @@ impl RelationalDB {
         &self,
         product: &DatabaseProduct,
     ) -> Result<Vec<HoyaPosition>, DBError> {
-        let db_product = self.get_product_by(product.id).await?;
-        let shops = self.all_shops().await?;
-        let shops_hm: HashMap<i32, InnerShop> = shops
-            .into_iter()
-            .map(|shop| (shop.id as i32, shop))
-            .collect();
+        let mut product_positions = vec![];
         let positions = Shopposition::find()
-            .filter(shopposition::Column::ProductId.eq(db_product.id as i32))
+            .find_also_related(Shop)
+            .filter(shopposition::Column::ProductId.eq(product.id as i32))
             .all(&self.connection)
             .await?;
-        let mut product_positions = vec![];
-        for position in positions.into_iter() {
-            if let Some(shop_info) = shops_hm.get(&position.shop_id).cloned() {
-                let prod = HoyaPosition::try_init(position, shop_info, &db_product)?;
-                product_positions.push(prod)
+        for (position, poss_shop) in positions.into_iter() {
+            if let Some(shop) = poss_shop {
+                let prod = HoyaPosition::try_init(position, shop.into(), product)?;
+                product_positions.push(prod);
             }
         }
         Ok(product_positions)
@@ -90,26 +70,18 @@ impl RelationalDB {
         &self,
         product: &DatabaseProduct,
     ) -> Result<Vec<(Date, f32)>, DBError> {
+        let mut final_prices = vec![];
+        let format = format_description!("[year]-[month]-[day]");
         let prices = Historicprice::find()
             .filter(historicprice::Column::ProductId.eq(product.id as i32))
             .all(&self.connection)
             .await?;
-        Ok(prices
-            .into_iter()
-            .map(|price| {
-                let format = format_description!("[year]-[month]-[day]");
-                let proper_date =
-                    time::Date::parse(&price.date.format("%Y-%m-%d").to_string(), format)
-                        .expect("Failed to parse date");
-                let price = price
-                    .avg_price
-                    .unwrap_or(Decimal::new(0, 1))
-                    .to_string()
-                    .parse::<f32>()
-                    .unwrap();
-                (proper_date, price)
-            })
-            .collect())
+        for hprice in prices.into_iter() {
+            let proper_date = Date::parse(&hprice.date.format("%Y-%m-%d").to_string(), format)?;
+            let price = hprice.avg_price.to_string().parse::<f32>()?;
+            final_prices.push((proper_date, price));
+        }
+        Ok(final_prices)
     }
 
     pub async fn get_top_shop(&self) -> Result<crate::db::Shop, DBError> {
@@ -147,50 +119,27 @@ impl RelationalDB {
             .one(&self.connection)
             .await?
             .ok_or(DBError::ParsingRulesNotFound)?;
-
-        Ok(ShopParsingRules {
-            url_categories: categories
-                .into_iter()
-                .map(|cat| cat.category.clone())
-                .collect(),
-            parsing_url: rules.url,
-            max_page_lookup: lookups.max_page.to_string(),
-            product_table_lookup: lookups.product_table.to_string(),
-            product_lookup: lookups.product.to_string(),
-            name_lookup: lookups.name.to_string(),
-            price_lookup: lookups.price.to_string(),
-            url_lookup: lookups.url.to_string(),
-            look_for_href: rules.look_for_href.unwrap_or_default(),
-            sleep_timeout_sec: rules.sleep_timeout_sec.map(|val| val as u64),
-        })
+        Ok(ShopParsingRules::with(rules, categories, lookups))
     }
 
     pub async fn get_proxy_parsing_rules(
         &self,
     ) -> Result<HashMap<Url, ProxyParsingRules>, DBError> {
-        let proxy_rules = Proxyparsingrules::find().all(&self.connection).await?;
-        let sources = proxy_rules.load_one(Proxysources, &self.connection).await?;
-        let mut result = HashMap::new();
-        for (rules, source) in proxy_rules.into_iter().zip(sources) {
-            if let Some(source) = source {
-                if let Ok(url) = Url::parse(&source.source) {
-                    let parsing_rules = ProxyParsingRules {
-                        table_lookup: rules.table_name,
-                        head_lookup: rules.head,
-                        row_lookup: rules.row,
-                        data_lookup: rules.data,
-                    };
-                    result.insert(url, parsing_rules);
-                }
-            }
-        }
+        let proxy_rules = Proxyparsingrules::find()
+            .find_also_related(Proxysources)
+            .all(&self.connection)
+            .await?;
+        let result: HashMap<Url, ProxyParsingRules> = proxy_rules
+            .into_iter()
+            .filter(|(_, source)| source.is_some())
+            .map(|(rules, source)| (rules, Url::parse(&source.unwrap().source)))
+            .filter(|(_, source)| source.is_ok())
+            .map(|(rules, source)| (source.unwrap(), rules.into()))
+            .collect();
         Ok(result)
     }
 
-    pub async fn save_proxies(
-        &self,
-        new_proxies: Vec<crate::data_models::Proxy>,
-    ) -> Result<(), DBError> {
+    pub async fn save_proxies(&self, new_proxies: Vec<InnerProxy>) -> Result<(), DBError> {
         let proxies_to_save: Vec<_> = new_proxies
             .into_iter()
             .map(|prox| proxy::ActiveModel {
@@ -204,24 +153,17 @@ impl RelationalDB {
         Ok(())
     }
 
-    pub async fn get_proxies(&self) -> Result<Vec<crate::data_models::Proxy>, DBError> {
+    pub async fn get_proxies(&self) -> Result<Vec<InnerProxy>, DBError> {
         let db_proxies = Proxy::find().all(&self.connection).await?;
-        let mut results = vec![];
-        for proxy in db_proxies.into_iter() {
-            if let Ok(url) = Url::parse(&proxy.url) {
-                let proxy_model = crate::data_models::Proxy {
-                    ip: url.host().unwrap().to_string(),
-                    port: url.port().unwrap(),
-                    https: url.scheme() == "https",
-                };
-                results.push(proxy_model);
-            }
-        }
-        Ok(results)
+        Ok(db_proxies
+            .into_iter()
+            .filter_map(|proxy| Url::parse(&proxy.url).ok())
+            .filter_map(|url| url.try_into().ok())
+            .collect())
     }
 
     pub async fn save_positions(&self, positions: Vec<HoyaPosition>) -> Result<(), DBError> {
-        let models: Vec<crate::db::entities::shopposition::ActiveModel> = positions
+        let models: Vec<shopposition::ActiveModel> = positions
             .into_iter()
             .map(|pos| {
                 let decimal_price = Decimal::from_f32_retain(pos.price).unwrap_or_default();
@@ -267,13 +209,10 @@ impl RelationalDB {
             .column_as(shopposition::Column::Price.min(), "min")
             .column_as(shopposition::Column::Price.max(), "max")
             .build(DbBackend::Postgres);
-        let result = crate::db::relational::PriceRange::find_by_statement(statement)
+        let result = ProductFilter::find_by_statement(statement)
             .one(&self.connection)
             .await?;
-        match result {
-            None => Err(DBError::PricesNotFound),
-            Some(price_range) => Ok(price_range.into()),
-        }
+        result.ok_or(DBError::PricesNotFound)
     }
 
     pub async fn push_shop_back(&self, shop: &crate::db::Shop) -> Result<(), DBError> {

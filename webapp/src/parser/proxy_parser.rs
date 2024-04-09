@@ -1,5 +1,4 @@
-use crate::data_models::{Proxy, ProxyParsingRules};
-use crate::db::Database;
+use crate::db::{Database, Proxy, ProxyParsingRules};
 use crate::errors::AppErrors;
 use crate::parser::errors::ParserError;
 use crate::parser::traits::Parser;

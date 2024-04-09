@@ -1,5 +1,5 @@
-use crate::data_models::Proxy;
 use crate::db::in_memory::ShopParsingRules;
+use crate::db::Proxy;
 use crate::db::{Database, HoyaPosition, Shop};
 use crate::errors::AppErrors;
 use crate::parser::errors::ParserError;

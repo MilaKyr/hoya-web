@@ -84,11 +84,11 @@ pub async fn n_products(State(state): State<AppState>) -> Result<Json<usize>, Er
 
 pub async fn search(
     State(state): State<AppState>,
-    Json(_query): Json<SearchFilter>,
+    Json(query): Json<SearchFilter>,
 ) -> Result<Json<Vec<DatabaseProduct>>, Error> {
     let products = state
         .db
-        .search_with_filter(_query)
+        .search_with_filter(query)
         .await
         .map_err(|e| Error::AppError(AppErrors::DatabaseError(e)))?;
     Ok(Json(products))
