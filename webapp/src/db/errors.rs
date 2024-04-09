@@ -18,8 +18,6 @@ pub enum DBError {
     NoProductShopPositions,
     #[error("transparent")]
     PriceError(#[from] std::num::ParseFloatError),
-    // #[error("transparent")]
-    // PriceError(#[from] std::num::ParseFloatError),
 }
 
 #[derive(Error, Debug)]
