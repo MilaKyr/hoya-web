@@ -8,7 +8,8 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
     pub shop_id: i32,
-    pub max_page: i32,
+    #[sea_orm(column_type = "Text")]
+    pub max_page: String,
     #[sea_orm(column_type = "Text")]
     pub product_table: String,
     #[sea_orm(column_type = "Text")]

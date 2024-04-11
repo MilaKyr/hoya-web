@@ -67,7 +67,7 @@ CREATE TABLE Alerts
 CREATE TABLE ParsingLookup (
     id SERIAL PRIMARY KEY,
     shop_id INT NOT NULL,
-    max_page INT NOT NULL,
+    max_page TEXT NOT NULL,
     product_table TEXT NOT NULL,
     product TEXT NOT NULL,
     name TEXT NOT NULL,

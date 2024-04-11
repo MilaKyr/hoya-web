@@ -27,7 +27,7 @@ pub struct PriceRange {
     pub max: f32,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ShopParsingRules {
     pub url_categories: Vec<String>,
     pub parsing_url: String,

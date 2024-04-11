@@ -22,6 +22,8 @@ pub enum DBError {
     DateParseError(#[from] time::error::Parse),
     #[error("failed to parse string as url")]
     UrlParseError,
+    #[error("either date or time is none")]
+    DatetimeError,
 }
 
 #[derive(Error, Debug)]

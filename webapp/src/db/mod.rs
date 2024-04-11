@@ -4,7 +4,7 @@ use crate::db::relational::entities;
 use crate::db::relational::RelationalDB;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
-use sea_orm::{Database as SeaOrmDB, FromQueryResult};
+use sea_orm::{Database as SeaOrmDB, EntityTrait, FromQueryResult, ModelTrait, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
@@ -27,7 +27,7 @@ pub enum Database {
     InMemory(Box<InMemoryDB>),
     Relational(RelationalDB),
 }
-#[derive(Debug, Default, Clone, Deserialize, Serialize, FromQueryResult)]
+#[derive(Debug, Default, PartialEq, Clone, Deserialize, Serialize, FromQueryResult)]
 pub struct ProductFilter {
     pub price_min: Option<f32>,
     pub price_max: Option<f32>,
