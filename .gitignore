@@ -17,6 +17,6 @@ Cargo.lock
 
 # Data
 webapp/public/img/*
-webapp/src/db/data.*
+**/*/data.json
 
 

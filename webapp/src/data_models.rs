@@ -1,10 +1,9 @@
-use crate::parser::errors::ParserError;
+use crate::db::{Shop, ShopPosition};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Product {
@@ -62,28 +61,6 @@ impl std::fmt::Display for HoyaType {
     }
 }
 
-#[derive(Debug, Default, Clone, Eq, Hash, PartialEq, Serialize, Deserialize)]
-pub struct Shop {
-    pub logo_path: String,
-    pub name: String,
-    pub url: String,
-}
-
-impl Shop {
-    pub fn dummy() -> Self {
-        let rand_string: String = thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(10)
-            .map(char::from)
-            .collect();
-        Self {
-            logo_path: "../public/img/home_icon.png".to_string(),
-            name: rand_string,
-            ..Default::default()
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Listing {
     pub category: Option<String>,
@@ -104,27 +81,8 @@ impl Listing {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct HoyaPosition {
-    pub shop: Shop,
-    pub full_name: String,
-    pub price: f32,
-    pub url: String,
-}
-
-impl HoyaPosition {
-    pub fn new(shop: Shop, full_name: String, price: f32, url: String) -> Self {
-        Self {
-            shop,
-            full_name,
-            price,
-            url,
-        }
-    }
-}
-
-impl From<&HoyaPosition> for Listing {
-    fn from(position: &HoyaPosition) -> Self {
+impl From<&ShopPosition> for Listing {
+    fn from(position: &ShopPosition) -> Self {
         Listing {
             category: None, // TODO
             name: position.full_name.clone(),
@@ -134,98 +92,10 @@ impl From<&HoyaPosition> for Listing {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct ShopParsingRules {
-    pub url_categories: Vec<Option<String>>,
-    pub parsing_url: String,
-    pub max_page_lookup: String,
-    pub product_table_lookup: String,
-    pub product_lookup: String,
-    pub name_lookup: String,
-    pub price_lookup: String,
-    pub url_lookup: String,
-    #[serde(default)]
-    pub look_for_href: bool,
-    #[serde(default)]
-    pub sleep_timeout_sec: Option<u64>,
-}
-
-impl ShopParsingRules {
-    pub fn get_shop_parsing_url(&self, page_number: u32, category: &Option<String>) -> String {
-        let mut url = self.parsing_url.clone();
-        url = url.replace(&UrlHolders::PageID.to_string(), &page_number.to_string());
-        if let Some(category) = category {
-            url = url.replace(&UrlHolders::CategoryID.to_string(), category);
-        }
-        url
-    }
-
-    pub fn sleep(&self) -> Result<(), time::error::ConversionRange> {
-        if let Some(duration_to_sleep) = self.sleep_timeout_sec {
-            std::thread::sleep(Duration::try_from(time::Duration::seconds(
-                duration_to_sleep as i64,
-            ))?);
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ProxyParsingRules {
-    pub table_lookup: String,
-    pub head_lookup: String,
-    pub row_lookup: String,
-    pub data_lookup: String,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Proxy {
-    pub ip: String,
-    pub port: u16,
-    pub https: bool,
-}
-
-impl Display for Proxy {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let protocol = if self.https { "https" } else { "http" };
-        write!(f, "{}://{}:{}", protocol, self.ip, self.port)
-    }
-}
-
-impl Proxy {
-    pub fn dummy(ip: &str) -> Self {
-        Self {
-            ip: ip.to_string(),
-            port: 1,
-            https: false,
-        }
-    }
-}
-
-impl TryFrom<Vec<(&String, &String)>> for Proxy {
-    type Error = ParserError;
-
-    fn try_from(row: Vec<(&String, &String)>) -> Result<Self, Self::Error> {
-        let (mut ip, mut port, mut https) = (None, None, None);
-        for (name, value) in row.into_iter() {
-            match name.as_str() {
-                "IP Address" => ip = Some(value.to_string()),
-                "Port" => port = value.parse::<u16>().ok(),
-                "Https" => https = Some(value == "yes"),
-                _ => {}
-            }
-        }
-        Ok(Self {
-            ip: ip.ok_or(ParserError::NotAProxyRow)?,
-            port: port.ok_or(ParserError::NotAProxyRow)?,
-            https: https.ok_or(ParserError::NotAProxyRow)?,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::ShopParsingRules;
 
     #[test]
     fn url_holders_to_string_work() {
@@ -249,8 +119,8 @@ mod tests {
         let name = "test name";
         let price = 1.99;
         let url = "https://example.com";
-        let pos1 = HoyaPosition::new(shop.clone(), name.to_string(), price, url.to_string());
-        let pos2 = HoyaPosition::new(shop.clone(), name.to_string(), price, url.to_string());
+        let pos1 = ShopPosition::new(shop.clone(), name.to_string(), price, url.to_string());
+        let pos2 = ShopPosition::new(shop.clone(), name.to_string(), price, url.to_string());
         assert_eq!(pos1, pos2);
     }
 
@@ -275,55 +145,5 @@ mod tests {
         let url = shop_parsing_rules.get_shop_parsing_url(2, &None);
         let expected_url = "https://example.com/products/?page=2".to_string();
         assert_eq!(url, expected_url);
-    }
-
-    #[test]
-    fn proxy_http_to_string_works() {
-        let proxy = Proxy {
-            ip: "127.0.0.1".to_string(),
-            port: 80,
-            https: false,
-        };
-        let proxy_url = proxy.to_string();
-        let expected_url = "http://127.0.0.1:80".to_string();
-        assert_eq!(proxy_url, expected_url);
-    }
-
-    #[test]
-    fn proxy_https_to_string_works() {
-        let proxy = Proxy {
-            ip: "127.0.0.1".to_string(),
-            port: 80,
-            https: true,
-        };
-        let proxy_url = proxy.to_string();
-        let expected_url = "https://127.0.0.1:80".to_string();
-        assert_eq!(proxy_url, expected_url);
-    }
-
-    #[test]
-    fn proxy_from_row_http_works() {
-        let proxy = Proxy::try_from(vec![
-            (&"IP Address".to_string(), &"127.0.0.1".to_string()),
-            (&"Port".to_string(), &"6464".to_string()),
-            (&"Https".to_string(), &"no".to_string()),
-        ])
-        .expect("Failed to create proxy");
-        let proxy_url = proxy.to_string();
-        let expected_url = "http://127.0.0.1:6464".to_string();
-        assert_eq!(proxy_url, expected_url);
-    }
-
-    #[test]
-    fn proxy_from_row_https_works() {
-        let proxy = Proxy::try_from(vec![
-            (&"IP Address".to_string(), &"127.0.0.1".to_string()),
-            (&"Port".to_string(), &"6464".to_string()),
-            (&"Https".to_string(), &"yes".to_string()),
-        ])
-        .expect("Failed to create proxy");
-        let proxy_url = proxy.to_string();
-        let expected_url = "https://127.0.0.1:6464".to_string();
-        assert_eq!(proxy_url, expected_url);
     }
 }

@@ -3,18 +3,33 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
+use std::env;
 use tower::ServiceExt;
+use webapp::configuration::DatabaseSettings;
 use webapp::create_app;
 use webapp::data_models::Product;
+use webapp::db::Database;
 
 pub async fn read_body(body: Body) -> String {
     let bytes = body::to_bytes(body, usize::MAX).await.expect("Failed");
     String::from_utf8(bytes.to_vec()).expect("response was not valid utf-8")
 }
 
+async fn create_db() -> Database {
+    let directory = env::current_dir().expect("Failed to find current directory");
+    let settings = DatabaseSettings {
+        file_path: Some(format!("{}/tests/data.json", directory.to_str().unwrap())),
+        ..Default::default()
+    };
+    Database::try_from(&settings)
+        .await
+        .expect("Failed to create in memory db")
+}
+
 #[tokio::test]
 async fn health_check_works() {
-    let (app, _) = create_app().expect("Failed to create an app");
+    let db = create_db().await;
+    let (app, _) = create_app(db).expect("Failed to create an app");
 
     let response = app
         .oneshot(
@@ -31,7 +46,8 @@ async fn health_check_works() {
 
 #[tokio::test]
 async fn products_works() {
-    let (app, _) = create_app().expect("Failed to create an app");
+    let db = create_db().await;
+    let (app, _) = create_app(db).expect("Failed to create an app");
 
     let response = app
         .oneshot(
@@ -53,7 +69,8 @@ async fn products_works() {
 
 #[tokio::test]
 async fn n_product_works() {
-    let (app, _) = create_app().expect("Failed to create an app");
+    let db = create_db().await;
+    let (app, _) = create_app(db).expect("Failed to create an app");
 
     let response = app
         .oneshot(
@@ -73,7 +90,8 @@ async fn n_product_works() {
 
 #[tokio::test]
 async fn product_id_fails() {
-    let (app, _) = create_app().expect("Failed to create an app");
+    let db = create_db().await;
+    let (app, _) = create_app(db).expect("Failed to create an app");
 
     let response = app
         .oneshot(
@@ -85,5 +103,5 @@ async fn product_id_fails() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
 }

@@ -10,12 +10,6 @@ use tracing::error;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("failed to read with serde: {0}")]
-    SerdeError(#[from] serde_json::error::Error),
-    #[error("socket address parsing error: {0}")]
-    SocketAddressParsingError(#[from] std::net::AddrParseError),
-    #[error("io error: {0}")]
-    IoError(#[from] std::io::Error),
     #[error(transparent)]
     AppError(AppErrors),
 }
@@ -24,18 +18,30 @@ pub enum Error {
 pub enum AppErrors {
     #[error("failed parsing with: {0}")]
     ParserError(#[from] ParserError),
-    #[error("failed to parse string as url: {0}")]
-    UrlParseError(#[from] url::ParseError),
-    #[error("")]
-    UnknownProduct,
+    #[error("transparent")]
+    DatabaseError(#[from] crate::db::DatabaseError),
+    #[error("transparent")]
+    ConfigurationError(#[from] ConfigurationError),
+}
+
+#[derive(Error, Debug)]
+pub enum ConfigurationError {
+    #[error("one or more settings are missed: provider, host, port, user, password")]
+    MissingDatabaseSettings,
+    #[error("data file not found")]
+    DataFileNotFound,
+    #[error("cannot be empty: {0}")]
+    CannotBeEmpty(String),
+    #[error("Unknown database type")]
+    UnknownDatabaseType,
 }
 
 impl IntoResponse for AppErrors {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
-            AppErrors::UnknownProduct => (StatusCode::BAD_REQUEST, "".to_string()),
-            AppErrors::UrlParseError(s) => (StatusCode::INTERNAL_SERVER_ERROR, s.to_string()),
             AppErrors::ParserError(s) => (StatusCode::INTERNAL_SERVER_ERROR, s.to_string()),
+            AppErrors::DatabaseError(s) => (StatusCode::INTERNAL_SERVER_ERROR, s.to_string()),
+            AppErrors::ConfigurationError(s) => (StatusCode::INTERNAL_SERVER_ERROR, s.to_string()),
         };
 
         let body = Json(json!({
@@ -48,22 +54,8 @@ impl IntoResponse for AppErrors {
 
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
-        if let Error::AppError(err) = self {
-            return err.into_response();
+        match self {
+            Error::AppError(err) => err.into_response(),
         }
-        let (status, error_message) = match self {
-            Error::SerdeError(s) => (StatusCode::BAD_REQUEST, s.to_string()),
-            Error::SocketAddressParsingError(s) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, s.to_string())
-            }
-            Error::IoError(s) => (StatusCode::INTERNAL_SERVER_ERROR, s.to_string()),
-            Error::AppError(_) => (StatusCode::INTERNAL_SERVER_ERROR, "".to_string()),
-        };
-
-        let body = Json(json!({
-            "error": error_message,
-        }));
-
-        (status, body).into_response()
     }
 }

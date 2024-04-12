@@ -1,15 +1,26 @@
-use crate::data_models::{HoyaPosition, Proxy, ProxyParsingRules, Shop, ShopParsingRules};
-use crate::db::map_json_as_pairs::map_as_pairs;
-use crate::db::{DatabaseProduct, ProductFilter, SearchFilter, SearchQuery};
+mod map_json_as_pairs;
+
+use crate::db::errors::{DBError, InMemoryError};
+use crate::db::product::DatabaseProduct;
+use crate::db::product_filter::ProductFilter;
+use crate::db::product_position::ShopPosition;
+use crate::db::proxy::Proxy;
+use crate::db::proxy_parsing_rules::ProxyParsingRules;
+use crate::db::search_filter::SearchFilter;
+use crate::db::shop::Shop;
+use crate::db::shop_parsing_rules::ShopParsingRules;
+use crate::db::SearchQuery;
+use map_json_as_pairs::map_as_pairs;
 use serde;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
+use std::fs;
 use std::str::FromStr;
 use std::sync::RwLock;
 use time::Date;
 use url::Url;
 
-pub type HoyaName = String;
+pub type ProductName = String;
 
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
 pub struct PriceRange {
@@ -24,9 +35,9 @@ pub struct FileStructure {
     #[serde(with = "map_as_pairs")]
     pub shops_parsing_rules: HashMap<Shop, ShopParsingRules>,
     #[serde(with = "map_as_pairs")]
-    pub pictures: HashMap<HoyaName, String>,
+    pub pictures: HashMap<ProductName, String>,
     #[serde(with = "map_as_pairs")]
-    pub positions: HashMap<String, Vec<HoyaPosition>>,
+    pub positions: HashMap<String, Vec<ShopPosition>>,
     #[serde(with = "map_as_pairs")]
     pub proxy_parsing_rules: HashMap<String, ProxyParsingRules>,
 }
@@ -36,44 +47,32 @@ pub struct InMemoryDB {
     pub proxies: RwLock<Vec<Proxy>>,
     pub shops: RwLock<VecDeque<Shop>>,
     pub shops_parsing_rules: RwLock<HashMap<Shop, ShopParsingRules>>,
-    pub pictures: RwLock<HashMap<HoyaName, String>>,
-    pub positions: RwLock<HashMap<HoyaName, Vec<HoyaPosition>>>,
+    pub pictures: RwLock<HashMap<ProductName, String>>,
+    pub positions: RwLock<HashMap<ProductName, Vec<ShopPosition>>>,
     pub products: RwLock<Vec<DatabaseProduct>>,
-    pub historic_prices: RwLock<HashMap<HoyaName, HashMap<Date, f32>>>,
+    pub historic_prices: RwLock<HashMap<ProductName, HashMap<Date, f32>>>,
     pub proxy_parsing_rules: RwLock<HashMap<Url, ProxyParsingRules>>,
     pub price_range: PriceRange,
 }
 
-impl InMemoryDB {
-    pub fn init() -> Self {
-        let data = include_str!("data.json");
-        let db: FileStructure = serde_json::from_str(data).expect("Fail to read JSON");
+impl TryFrom<String> for InMemoryDB {
+    type Error = DBError;
+
+    fn try_from(file_path: String) -> Result<Self, Self::Error> {
+        let data = fs::read_to_string(file_path)
+            .map_err(|e| DBError::InMemoryError(InMemoryError::IoError(e)))?;
+        let db: FileStructure = serde_json::from_str(&data)
+            .map_err(|e| DBError::InMemoryError(InMemoryError::SerdeError(e)))?;
         let mut proxy_parsing_rules = HashMap::new();
-        for (url, rules) in db.proxy_parsing_rules.into_iter() {
-            if let Ok(url) = Url::from_str(&url) {
-                proxy_parsing_rules.insert(url, rules);
+        for (url, rules) in db.proxy_parsing_rules.iter() {
+            if let Ok(url) = Url::from_str(url) {
+                proxy_parsing_rules.insert(url, rules.to_owned());
             }
         }
-        let mut min_price = 0.;
-        let mut max_price = 0.;
-        for (_, positions) in db.positions.iter() {
-            let prices: Vec<f32> = positions.iter().map(|pos| pos.price).collect();
-            let curr_min = prices
-                .iter()
-                .min_by(|a, b| a.partial_cmp(b).expect("Failed to compare"))
-                .unwrap_or(&0.0);
-            if *curr_min < min_price {
-                min_price = *curr_min;
-            }
-            let curr_max = prices
-                .iter()
-                .min_by(|a, b| b.partial_cmp(a).expect("Failed to compare"))
-                .unwrap_or(&0.0);
-            if *curr_max > max_price {
-                max_price = *curr_max;
-            }
-        }
-        Self {
+        let positions = db.positions.values().flatten();
+        let mut prices: Vec<_> = positions.into_iter().map(|pos| pos.price).collect();
+        prices.sort_by(|a, b| a.partial_cmp(b).expect("Tried to compare a NaN"));
+        Ok(Self {
             proxies: RwLock::new(db.proxies),
             shops: RwLock::new(VecDeque::from(db.shops)),
             shops_parsing_rules: RwLock::new(db.shops_parsing_rules),
@@ -83,25 +82,31 @@ impl InMemoryDB {
             historic_prices: Default::default(),
             proxy_parsing_rules: RwLock::new(proxy_parsing_rules),
             price_range: PriceRange {
-                min: min_price,
-                max: max_price,
+                min: prices.first().copied().unwrap_or_default(),
+                max: prices.last().copied().unwrap_or_default(),
             },
+        })
+    }
+}
+
+impl InMemoryDB {
+    pub fn save_positions(&self, positions: Vec<ShopPosition>) -> Result<(), DBError> {
+        if let Some(pos1) = positions.first() {
+            let mut all_positions = self.positions.write().unwrap();
+            (*all_positions).insert(pos1.shop.name.to_string(), positions);
+            return Ok(());
         }
+        Err(DBError::NoProductShopPositions)
     }
 
-    pub fn set_positions(&self, name: String, hoya_positions: Vec<HoyaPosition>) {
-        let mut positions = self.positions.write().unwrap();
-        (*positions).insert(name, hoya_positions);
-    }
-
-    pub fn get_positions_all(&self) -> HashMap<HoyaName, Vec<HoyaPosition>> {
+    pub fn get_positions_all(&self) -> HashMap<ProductName, Vec<ShopPosition>> {
         let positions = self.positions.read().unwrap();
         positions.clone()
     }
 
-    pub fn all_products(&self) -> Vec<DatabaseProduct> {
+    pub fn all_products(&self) -> Result<Vec<DatabaseProduct>, DBError> {
         let products = self.products.read().unwrap();
-        products.clone()
+        Ok(products.clone())
     }
     pub fn get_shop_by(&self, id: u32) -> Option<Shop> {
         let shops = self.shops.read().unwrap();
@@ -113,11 +118,11 @@ impl InMemoryDB {
         products: Vec<DatabaseProduct>,
         filter: &Option<ProductFilter>,
         query: SearchQuery,
-    ) -> Vec<DatabaseProduct> {
+    ) -> Result<Vec<DatabaseProduct>, DBError> {
         let mut selected = vec![];
 
         for product in products.iter() {
-            let positions = self.get_positions_for(product);
+            let positions = self.get_positions_for(product)?;
 
             if positions.iter().any(|pos| {
                 (pos.price
@@ -135,44 +140,58 @@ impl InMemoryDB {
                 selected.push(product.clone());
             }
         }
-        selected
+        Ok(selected)
     }
-    pub fn search_with_filters(&self, filter: SearchFilter) -> Vec<DatabaseProduct> {
+    pub fn search_with_filter(
+        &self,
+        filter: SearchFilter,
+    ) -> Result<Vec<DatabaseProduct>, DBError> {
         let all_products = self.products.read().unwrap().to_owned();
         if !filter.contains_query() {
-            return all_products;
+            return Ok(all_products);
         }
         let query = filter.query().expect("Query cannot be empty");
         self.search(all_products, &filter.product, query)
     }
 
-    pub fn get_product_filter(&self) -> ProductFilter {
-        self.price_range.into()
+    pub fn get_product_filter(&self) -> Result<ProductFilter, DBError> {
+        Ok(self.price_range.into())
     }
 
-    pub fn get_product_by(&self, id: u32) -> Option<DatabaseProduct> {
+    pub fn get_product_by(&self, id: u32) -> Result<DatabaseProduct, DBError> {
         let products = self.products.read().unwrap();
-        products.get(id as usize).cloned()
+        products
+            .get(id as usize)
+            .cloned()
+            .ok_or(DBError::UnknownProduct)
     }
 
-    pub fn get_positions_for(&self, product: &DatabaseProduct) -> Vec<HoyaPosition> {
+    pub fn get_positions_for(
+        &self,
+        product: &DatabaseProduct,
+    ) -> Result<Vec<ShopPosition>, DBError> {
         let positions = self.positions.read().unwrap();
-        positions.get(&product.name).cloned().unwrap_or_default()
+        positions
+            .get(&product.name)
+            .cloned()
+            .ok_or(DBError::UnknownProduct)
     }
 
-    pub fn get_prices_for(&self, product: &DatabaseProduct) -> HashMap<Date, f32> {
+    pub fn get_prices_for(&self, product: &DatabaseProduct) -> Result<Vec<(Date, f32)>, DBError> {
         let positions = self.historic_prices.read().unwrap();
-        positions.get(&product.name).cloned().unwrap_or_default()
+        let prices = positions.get(&product.name).cloned().unwrap_or_default();
+        Ok(prices.into_iter().collect())
     }
 
-    pub fn get_top_shop(&self) -> Option<Shop> {
+    pub fn get_top_shop(&self) -> Result<Shop, DBError> {
         let mut shops = self.shops.write().unwrap();
-        shops.pop_front()
+        shops.pop_front().ok_or(DBError::ShopNotFound)
     }
 
-    pub fn push_shop_back(&self, shop: &Shop) {
+    pub fn push_shop_back(&self, shop: &Shop) -> Result<(), DBError> {
         let mut shops = self.shops.write().unwrap();
         shops.push_back(shop.clone());
+        Ok(())
     }
 
     pub fn get_all_shops(&self) -> Vec<Shop> {
@@ -180,24 +199,28 @@ impl InMemoryDB {
         shops.clone().into_iter().collect::<Vec<Shop>>()
     }
 
-    pub fn get_shop_parsing_rules(&self, shop: &Shop) -> Option<ShopParsingRules> {
+    pub fn get_shop_parsing_rules(&self, shop: &Shop) -> Result<ShopParsingRules, DBError> {
         let shops_parsing_rules = self.shops_parsing_rules.read().unwrap();
-        shops_parsing_rules.get(shop).cloned()
+        shops_parsing_rules
+            .get(shop)
+            .cloned()
+            .ok_or(DBError::ParsingRulesNotFound)
     }
 
-    pub fn set_proxies(&self, new_proxies: Vec<Proxy>) {
+    pub fn save_proxies(&self, new_proxies: Vec<Proxy>) -> Result<(), DBError> {
         let mut proxies = self.proxies.write().unwrap();
         *proxies = new_proxies;
+        Ok(())
     }
 
-    pub fn get_proxies(&self) -> Vec<Proxy> {
+    pub fn get_proxies(&self) -> Result<Vec<Proxy>, DBError> {
         let proxies = self.proxies.read().unwrap();
-        proxies.clone()
+        Ok(proxies.clone())
     }
 
-    pub fn get_proxy_parsing_rules(&self) -> HashMap<Url, ProxyParsingRules> {
+    pub fn get_proxy_parsing_rules(&self) -> Result<HashMap<Url, ProxyParsingRules>, DBError> {
         let proxy_parsing_rules = self.proxy_parsing_rules.read().unwrap();
-        proxy_parsing_rules.clone()
+        Ok(proxy_parsing_rules.clone())
     }
 }
 
@@ -207,27 +230,29 @@ mod tests {
 
     fn create_test_shop(name: &str) -> Shop {
         Shop {
-            logo_path: "path/to/file".to_string(),
+            logo: "path/to/file".to_string(),
             name: name.to_string(),
+            ..Default::default()
         }
     }
 
     #[test]
     fn set_get_positions_all_works() {
         let db = InMemoryDB::default();
-        let name = "a".to_string();
-        let shop = create_test_shop("test shop");
-        let hoya_positions = vec![HoyaPosition::new(
+        let name = "test shop";
+        let shop = create_test_shop(name);
+        let hoya_positions = vec![ShopPosition::new(
             shop,
             "full name".to_string(),
             1.2,
             "https://example.com".to_string(),
         )];
 
-        db.set_positions("a".to_string(), hoya_positions.clone());
+        db.save_positions(hoya_positions.clone())
+            .expect("Failed to save positions");
 
         let mut expected_result = HashMap::new();
-        expected_result.insert(name.to_string(), hoya_positions.clone());
+        expected_result.insert(name.to_string(), hoya_positions);
         let result = db.get_positions_all();
         assert_eq!(result, expected_result);
     }
@@ -236,9 +261,10 @@ mod tests {
     fn set_get_proxies_works() {
         let expected_result = vec![Proxy::dummy("a"), Proxy::dummy("b"), Proxy::dummy("c")];
         let db = InMemoryDB::default();
-        db.set_proxies(expected_result.clone());
+        db.save_proxies(expected_result.clone())
+            .expect("Failed to save proxies");
 
-        let result = db.get_proxies();
+        let result = db.get_proxies().expect("Failed to get proxies");
         assert_eq!(result, expected_result);
     }
 
@@ -254,7 +280,7 @@ mod tests {
             proxy_parsing_rules: RwLock::new(expected_result.clone()),
             ..Default::default()
         };
-        let result = db.get_proxy_parsing_rules();
+        let result = db.get_proxy_parsing_rules().expect("Failed to parse");
         assert_eq!(result, expected_result);
     }
 
@@ -283,11 +309,11 @@ mod tests {
             ..Default::default()
         };
         let result1 = db.get_top_shop();
-        assert!(result1.is_some());
+        assert!(result1.is_ok());
         assert_eq!(result1.unwrap(), shop1);
-        db.push_shop_back(&shop1);
+        db.push_shop_back(&shop1).expect("Failed to oush shop back");
         let result2 = db.get_top_shop();
-        assert!(result2.is_some());
+        assert!(result2.is_ok());
         assert_eq!(result2.unwrap(), shop2);
     }
 }
