@@ -1,4 +1,4 @@
-use crate::db::{HoyaPosition, Shop};
+use crate::db::{Shop, ShopPosition};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
@@ -81,8 +81,8 @@ impl Listing {
     }
 }
 
-impl From<&HoyaPosition> for Listing {
-    fn from(position: &HoyaPosition) -> Self {
+impl From<&ShopPosition> for Listing {
+    fn from(position: &ShopPosition) -> Self {
         Listing {
             category: None, // TODO
             name: position.full_name.clone(),
@@ -95,7 +95,7 @@ impl From<&HoyaPosition> for Listing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::in_memory::ShopParsingRules;
+    use crate::db::ShopParsingRules;
 
     #[test]
     fn url_holders_to_string_work() {
@@ -119,8 +119,8 @@ mod tests {
         let name = "test name";
         let price = 1.99;
         let url = "https://example.com";
-        let pos1 = HoyaPosition::new(shop.clone(), name.to_string(), price, url.to_string());
-        let pos2 = HoyaPosition::new(shop.clone(), name.to_string(), price, url.to_string());
+        let pos1 = ShopPosition::new(shop.clone(), name.to_string(), price, url.to_string());
+        let pos2 = ShopPosition::new(shop.clone(), name.to_string(), price, url.to_string());
         assert_eq!(pos1, pos2);
     }
 
