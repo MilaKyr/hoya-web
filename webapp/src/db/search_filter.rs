@@ -1,5 +1,6 @@
 use crate::db::product_filter::ProductFilter;
 use crate::db::search_query::SearchQuery;
+use crate::db::traits::ExternalText;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 
