@@ -1,5 +1,5 @@
-use crate::data_models::{HoyaPosition, Proxy, Shop, ShopParsingRules};
-use crate::db::Database;
+use crate::db::{Database, Proxy, Shop, ShopParsingRules, ShopPosition};
+use crate::errors::AppErrors;
 use crate::parser::errors::ParserError;
 use crate::parser::proxy_parser::ProxyManager;
 use crate::parser::traits::Parser;
@@ -36,11 +36,12 @@ impl PositionsParser {
         &self,
         db: &Database,
         proxy: &ProxyManager,
-    ) -> Result<(Shop, Vec<HoyaPosition>), ParserError> {
-        let shop = db.get_top_shop().ok_or(ParserError::NoShopsFound)?;
+    ) -> Result<(Shop, Vec<ShopPosition>), AppErrors> {
+        let shop = db.get_top_shop().await.map_err(AppErrors::DatabaseError)?;
         let shop_rules = db
             .get_shop_parsing_rules(&shop)
-            .ok_or(ParserError::FailedToFindShopsRules(shop.name.to_string()))?;
+            .await
+            .map_err(AppErrors::DatabaseError)?;
         let mut n_tries = PARSERS_N_TRIES;
         while n_tries > 0 {
             let positions = self.parse_shop(shop.clone(), &shop_rules, db, proxy).await;
@@ -49,7 +50,7 @@ impl PositionsParser {
                 Err(_) => n_tries -= 1,
             }
         }
-        Err(ParserError::NoProxyAvailable)
+        Err(AppErrors::ParserError(ParserError::NoProxyAvailable))
     }
 
     pub async fn parse_shop(
@@ -58,25 +59,37 @@ impl PositionsParser {
         shop_rules: &ShopParsingRules,
         db: &Database,
         proxy: &ProxyManager,
-    ) -> Result<Vec<HoyaPosition>, ParserError> {
+    ) -> Result<Vec<ShopPosition>, AppErrors> {
         let selected_proxy = proxy.get(db).await?;
         let shop = shop.clone();
         let shop_rules = shop_rules.clone();
-        let task: tokio::task::JoinHandle<Result<Vec<HoyaPosition>, ParserError>> =
+        let task: tokio::task::JoinHandle<Result<Vec<ShopPosition>, AppErrors>> =
             spawn_blocking(move || {
                 let mut products = vec![];
-                for opt_category in &shop_rules.url_categories {
+                if shop_rules.url_categories.is_empty() {
                     let new_products = Self::parse_all_products(
                         &shop,
                         selected_proxy.clone(),
                         &shop_rules,
-                        opt_category,
+                        &None,
                     )?;
                     products.extend(new_products);
+                } else {
+                    for opt_category in shop_rules.url_categories.iter() {
+                        let new_products = Self::parse_all_products(
+                            &shop,
+                            selected_proxy.clone(),
+                            &shop_rules,
+                            &Some(opt_category.to_string()),
+                        )?;
+                        products.extend(new_products);
+                    }
                 }
+
                 Ok(products)
             });
-        task.await?
+        task.await
+            .map_err(|e| AppErrors::ParserError(ParserError::TokioTaskError(e)))?
     }
 
     pub fn parse_all_products(
@@ -84,7 +97,7 @@ impl PositionsParser {
         proxy: Proxy,
         shop_rules: &ShopParsingRules,
         category: &Option<String>,
-    ) -> Result<Vec<HoyaPosition>, ParserError> {
+    ) -> Result<Vec<ShopPosition>, ParserError> {
         let mut all_positions = vec![];
         let (page_positions, n_pages) =
             Self::parse_page(shop, Some(proxy.clone()), shop_rules, category, 1)?;
@@ -109,7 +122,7 @@ impl PositionsParser {
         shop_rules: &ShopParsingRules,
         category: &Option<String>,
         page_id: u32,
-    ) -> Result<(Vec<HoyaPosition>, u32), ParserError> {
+    ) -> Result<(Vec<ShopPosition>, u32), ParserError> {
         let client = Self::create_client(proxy)?;
         let parsing_url = shop_rules.get_shop_parsing_url(page_id, category);
         let response_text = client.get(parsing_url).send()?.text()?;
@@ -132,7 +145,7 @@ impl PositionsParser {
         shop: &Shop,
         shop_rules: &ShopParsingRules,
         document: &Html,
-    ) -> Result<Vec<HoyaPosition>, ParserError> {
+    ) -> Result<Vec<ShopPosition>, ParserError> {
         let mut products = vec![];
         let table_selector = Selector::parse(&shop_rules.product_table_lookup)
             .map_err(|_| ParserError::CrawlerSelectorError)?;
@@ -151,13 +164,13 @@ impl PositionsParser {
         shop: &Shop,
         shop_rules: &ShopParsingRules,
         product: ElementRef,
-    ) -> Result<HoyaPosition, ParserError> {
+    ) -> Result<ShopPosition, ParserError> {
         let name = Self::select_data_point(product, &shop_rules.name_lookup, false)?;
         let price = Self::select_data_point(product, &shop_rules.price_lookup, false)?;
         let price = clean_price(price);
         let url =
             Self::select_data_point(product, &shop_rules.url_lookup, shop_rules.look_for_href)?;
-        Ok(HoyaPosition::new(shop.clone(), name, price, url))
+        Ok(ShopPosition::new(shop.clone(), name, price, url))
     }
 
     pub fn retrieve_page_count(
@@ -185,8 +198,9 @@ mod tests {
 
     fn create_test_shop() -> Shop {
         Shop {
-            logo_path: "path/to/file".to_string(),
+            logo: "path/to/file".to_string(),
             name: "test name".to_string(),
+            ..Default::default()
         }
     }
 
@@ -294,7 +308,7 @@ mod tests {
     fn parse_product_href_works() {
         let shop = create_test_shop();
         let shop_rules = ShopParsingRules {
-            url_categories: vec![None],
+            url_categories: vec![],
             product_lookup: "div.products > div.product".to_string(),
             name_lookup: "span.product_name".to_string(),
             price_lookup: "div.price".to_string(),
@@ -327,7 +341,7 @@ mod tests {
             .next();
         assert!(element.is_some());
         let result = PositionsParser::parse_product(&shop, &shop_rules, element.unwrap());
-        let expected_position = HoyaPosition::new(
+        let expected_position = ShopPosition::new(
             shop.clone(),
             "Test name".to_string(),
             14.11,
@@ -341,7 +355,7 @@ mod tests {
     fn parse_product_div_works() {
         let shop = create_test_shop();
         let shop_rules = ShopParsingRules {
-            url_categories: vec![None],
+            url_categories: vec![],
             product_lookup: "div.products > div.product".to_string(),
             name_lookup: "span.product_name".to_string(),
             price_lookup: "div.price".to_string(),
@@ -373,7 +387,7 @@ mod tests {
             .next();
         assert!(element.is_some());
         let result = PositionsParser::parse_product(&shop, &shop_rules, element.unwrap());
-        let expected_position = HoyaPosition::new(
+        let expected_position = ShopPosition::new(
             shop.clone(),
             "Test name".to_string(),
             14.11,
@@ -387,7 +401,7 @@ mod tests {
     fn parse_data_works() {
         let shop = create_test_shop();
         let shop_rules = ShopParsingRules {
-            url_categories: vec![None],
+            url_categories: vec![],
             product_table_lookup: "div.products".to_string(),
             product_lookup: "div.products > div.product".to_string(),
             name_lookup: "span.product_name".to_string(),
@@ -415,7 +429,7 @@ mod tests {
         "#,
         );
         let result = PositionsParser::parse_data(&shop, &shop_rules, &html);
-        let expected_position = vec![HoyaPosition::new(
+        let expected_position = vec![ShopPosition::new(
             shop.clone(),
             "Test name".to_string(),
             14.11,

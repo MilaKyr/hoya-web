@@ -1,4 +1,3 @@
-use crate::db::in_memory::InMemoryDB;
 use crate::db::Database;
 use crate::errors::AppErrors;
 use crate::parser::positions_parser::PositionsParser;
@@ -13,20 +12,22 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn init() -> Self {
+    pub fn init(db: Database) -> Self {
         Self {
             positions_parser: PositionsParser::default(),
             proxy_parser: ProxyManager::default(),
-            db: Arc::new(Database::InMemory(InMemoryDB::init())),
+            db: Arc::new(db),
         }
     }
 
     pub async fn parse(&self) -> Result<(), AppErrors> {
-        let (shop, _hoya_positions) = self
+        self.proxy_parser.update_proxies(&self.db).await?;
+        let (shop, positions) = self
             .positions_parser
             .parse(&self.db, &self.proxy_parser)
             .await?;
-        self.db.push_shop_back(&shop);
+        self.db.push_shop_back(&shop).await?;
+        self.db.save_positions(positions).await?;
         Ok(())
     }
 }

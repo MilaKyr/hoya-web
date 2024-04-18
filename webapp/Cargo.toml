@@ -14,14 +14,15 @@ name = "webapp"
 
 [dependencies]
 config = "0.13.3"
+axum = {version = "0.7.5", features = ["macros"] }
+tokio = { version = "1.0", features = ["full"] }
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.4.4", features = ["fs", "trace"] }
 serde = { version = "1.0", features = ["derive"] }
-thiserror = "1.0.50"
+serde_with = { version = "3.7.0" , features = ["macros"]}
 serde_json = "1.0.108"
-askama = "0.12.1"
-axum = "0.6.20"
-tokio = { version = "1.0", features = ["full"] }
+sea-orm = { version = "^0.12.0", features = [ "sqlx-postgres", "runtime-tokio-native-tls", "macros", "mock" ] }
+thiserror = "1.0.50"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2.4.1"
@@ -29,7 +30,8 @@ rand = { version = "0.8.5" , features = ["std_rng"]}
 reqwest = {version = "0.11", features = ["blocking", "rustls-tls"]}
 scraper = "0.18.1"
 time = "0.3.30"
-
+uuid = { version = "1.8.0", features = ["v4"] }
+chrono = "0.4.37"
 
 [dev-dependencies]
 hyper = { version = "0.14", features = ["full"] }
