@@ -1,27 +1,11 @@
 use crate::app_state::AppState;
 use crate::data_models::Product;
-use crate::db::Shop;
-use crate::db::{DatabaseProduct, SearchFilter};
+use crate::db::{DatabaseProduct, Message, ProductAlert, SearchFilter};
 use crate::errors::{AppErrors, Error};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Result};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
-#[derive(Debug, Deserialize)]
-pub struct Message {
-    pub name: String,
-    pub email: String,
-    pub message: String,
-}
-
-#[derive(Debug, Default, Clone, Deserialize, Serialize)]
-pub struct ProductAlert {
-    pub product_id: u32,
-    pub price_below: f32,
-    pub shop: Option<Shop>,
-}
 
 pub async fn health_check() -> impl IntoResponse {
     StatusCode::OK
@@ -103,10 +87,26 @@ pub async fn search_filter(State(state): State<AppState>) -> Result<Json<SearchF
     Ok(Json(filter))
 }
 
-pub async fn contact(State(_state): State<AppState>, Json(_msg): Json<Message>) -> StatusCode {
-    todo!()
+pub async fn contact(
+    State(state): State<AppState>,
+    Json(msg): Json<Message>,
+) -> Result<StatusCode, Error> {
+    state
+        .db
+        .register_message(msg)
+        .await
+        .map_err(|e| Error::AppError(AppErrors::DatabaseError(e)))?;
+    Ok(StatusCode::OK)
 }
 
-pub async fn alert(State(_state): State<AppState>, Json(_alert): Json<ProductAlert>) -> StatusCode {
-    todo!()
+pub async fn alert(
+    State(state): State<AppState>,
+    Json(alert): Json<ProductAlert>,
+) -> Result<StatusCode, Error> {
+    state
+        .db
+        .register_alert(alert)
+        .await
+        .map_err(|e| Error::AppError(AppErrors::DatabaseError(e)))?;
+    Ok(StatusCode::OK)
 }

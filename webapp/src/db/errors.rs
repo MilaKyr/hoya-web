@@ -24,6 +24,8 @@ pub enum DBError {
     UrlParseError,
     #[error("either date or time is none")]
     DatetimeError,
+    #[error("transparent")]
+    NotAFloat(#[from] rust_decimal::Error),
 }
 
 #[derive(Error, Debug)]

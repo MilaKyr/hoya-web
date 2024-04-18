@@ -1,7 +1,9 @@
 mod database;
 mod errors;
 mod in_memory;
+mod message;
 mod product;
+mod product_alert;
 mod product_filter;
 mod product_position;
 mod proxy;
@@ -11,10 +13,13 @@ mod search_filter;
 mod search_query;
 mod shop;
 mod shop_parsing_rules;
+mod traits;
 
 pub use database::Database;
 pub use errors::DBError as DatabaseError;
+pub use message::Message;
 pub use product::DatabaseProduct;
+pub use product_alert::ProductAlert;
 pub use product_position::ShopPosition;
 pub use proxy::Proxy;
 pub use proxy_parsing_rules::ProxyParsingRules;

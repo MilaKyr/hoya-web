@@ -1,20 +1,18 @@
+use crate::db::traits::ExternalText;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 pub struct SearchQuery(String);
 
-impl SearchQuery {
-    pub fn cleaned(&self) -> Self {
-        let mut query = self.0.clone();
-        query = query.trim().to_lowercase();
-        query = query
-            .chars()
-            .filter(|c| !c.is_ascii_punctuation())
-            .collect::<String>();
-        SearchQuery(query)
+impl ExternalText for SearchQuery {
+    fn cleaned(&self) -> Self {
+        let query = self.0.clone();
+        SearchQuery(self.clean(&query))
     }
+}
 
+impl SearchQuery {
     pub fn new(value: String) -> Self {
         SearchQuery(value)
     }

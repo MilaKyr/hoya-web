@@ -1,7 +1,9 @@
 mod map_json_as_pairs;
 
 use crate::db::errors::{DBError, InMemoryError};
+use crate::db::message::Message;
 use crate::db::product::DatabaseProduct;
+use crate::db::product_alert::ProductAlert;
 use crate::db::product_filter::ProductFilter;
 use crate::db::product_position::ShopPosition;
 use crate::db::proxy::Proxy;
@@ -53,6 +55,8 @@ pub struct InMemoryDB {
     pub historic_prices: RwLock<HashMap<ProductName, HashMap<Date, f32>>>,
     pub proxy_parsing_rules: RwLock<HashMap<Url, ProxyParsingRules>>,
     pub price_range: PriceRange,
+    pub messages: RwLock<Vec<Message>>,
+    pub alerts: RwLock<Vec<ProductAlert>>,
 }
 
 impl TryFrom<String> for InMemoryDB {
@@ -85,6 +89,8 @@ impl TryFrom<String> for InMemoryDB {
                 min: prices.first().copied().unwrap_or_default(),
                 max: prices.last().copied().unwrap_or_default(),
             },
+            messages: Default::default(),
+            alerts: Default::default(),
         })
     }
 }
@@ -221,6 +227,18 @@ impl InMemoryDB {
     pub fn get_proxy_parsing_rules(&self) -> Result<HashMap<Url, ProxyParsingRules>, DBError> {
         let proxy_parsing_rules = self.proxy_parsing_rules.read().unwrap();
         Ok(proxy_parsing_rules.clone())
+    }
+
+    pub fn register_message(&self, message: Message) -> Result<(), DBError> {
+        let mut messages = self.messages.write().unwrap();
+        messages.push(message);
+        Ok(())
+    }
+
+    pub fn register_alert(&self, alert: ProductAlert) -> Result<(), DBError> {
+        let mut alerts = self.alerts.write().unwrap();
+        alerts.push(alert);
+        Ok(())
     }
 }
 

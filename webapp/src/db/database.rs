@@ -1,7 +1,9 @@
 use crate::configuration::{DatabaseSettings, DatabaseType};
 use crate::db::errors::DBError;
 use crate::db::in_memory::InMemoryDB;
+use crate::db::message::Message;
 use crate::db::product::DatabaseProduct;
+use crate::db::product_alert::ProductAlert;
 use crate::db::product_position::ShopPosition;
 use crate::db::proxy::Proxy;
 use crate::db::proxy_parsing_rules::ProxyParsingRules;
@@ -148,6 +150,20 @@ impl Database {
         match self {
             Database::InMemory(db) => db.get_proxy_parsing_rules(),
             Database::Relational(db) => db.get_proxy_parsing_rules().await,
+        }
+    }
+
+    pub async fn register_message(&self, message: Message) -> Result<(), DBError> {
+        match self {
+            Database::InMemory(db) => db.register_message(message),
+            Database::Relational(db) => db.register_message(message).await,
+        }
+    }
+
+    pub async fn register_alert(&self, alert: ProductAlert) -> Result<(), DBError> {
+        match self {
+            Database::InMemory(db) => db.register_alert(alert),
+            Database::Relational(db) => db.register_alert(alert).await,
         }
     }
 }

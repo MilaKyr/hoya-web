@@ -13,15 +13,18 @@ use time::{Date, OffsetDateTime};
 use url::Url;
 
 use crate::db::errors::DBError;
+use crate::db::message::Message;
 use crate::db::product::DatabaseProduct;
+use crate::db::product_alert::ProductAlert;
 use crate::db::product_filter::ProductFilter;
 use crate::db::product_position::ShopPosition;
 use crate::db::proxy::Proxy;
 use crate::db::proxy_parsing_rules::ProxyParsingRules;
 use crate::db::relational::entities::prelude::{
-    Historicprice, Parsingcategory, Parsinglookup, Product, Proxy as InnerProxy,
-    Proxyparsingrules as InnerProxyParsingRules, Proxysources, Shop as InnerShop,
-    Shopparsingrules as InnerShopParsingRules, Shopposition as InnerShopPosition,
+    Alerts, Contacts, Historicprice, Messages, Parsingcategory, Parsinglookup, Product,
+    Proxy as InnerProxy, Proxyparsingrules as InnerProxyParsingRules, Proxysources,
+    Shop as InnerShop, Shopparsingrules as InnerShopParsingRules,
+    Shopposition as InnerShopPosition,
 };
 use crate::db::search_filter::SearchFilter;
 use crate::db::shop::Shop;
@@ -247,6 +250,55 @@ impl RelationalDB {
                 Ok(())
             }
         }
+    }
+
+    pub async fn insert_contact_if_not_exists(&self, email: String) -> Result<i32, DBError> {
+        let email_info = Contacts::find()
+            .filter(entities::contacts::Column::Email.contains(email.to_string()))
+            .one(&self.connection)
+            .await?;
+        match email_info {
+            None => {
+                let contact = entities::contacts::ActiveModel {
+                    email: Set(email),
+                    ..Default::default()
+                };
+                let inserted = Contacts::insert(contact).exec(&self.connection).await?;
+                Ok(inserted.last_insert_id)
+            }
+            Some(model) => Ok(model.id),
+        }
+    }
+    pub async fn register_message(&self, message: Message) -> Result<(), DBError> {
+        let now = self.now()?;
+        let email_id = self
+            .insert_contact_if_not_exists(message.email.to_string())
+            .await?;
+        let msg = entities::messages::ActiveModel {
+            date: Set(now.date()),
+            content: Set(message.message.to_string()),
+            email_id: Set(email_id),
+            ..Default::default()
+        };
+        let _ = Messages::insert(msg).exec(&self.connection).await;
+        Ok(())
+    }
+
+    pub async fn register_alert(&self, alert: ProductAlert) -> Result<(), DBError> {
+        let price_threshold = Decimal::try_from(alert.price_below)?;
+        let now = self.now()?;
+        let email_id = self
+            .insert_contact_if_not_exists(alert.email.to_string())
+            .await?;
+        let alert_model = entities::alerts::ActiveModel {
+            product_id: Set(alert.product_id as i32),
+            email_id: Set(email_id),
+            created_date: Set(now),
+            price_threshold: Set(price_threshold),
+            ..Default::default()
+        };
+        let _ = Alerts::insert(alert_model).exec(&self.connection).await;
+        Ok(())
     }
 }
 
