@@ -141,7 +141,7 @@ impl InMemoryDB {
                             .as_ref()
                             .and_then(|prod| prod.price_max)
                             .unwrap_or(f32::MAX))
-                    && pos.full_name.contains(&query.to_string())
+                    && pos.full_name.contains(&*query)
             }) {
                 selected.push(product.clone());
             }
@@ -153,10 +153,10 @@ impl InMemoryDB {
         filter: SearchFilter,
     ) -> Result<Vec<DatabaseProduct>, DBError> {
         let all_products = self.products.read().unwrap().to_owned();
-        if !filter.contains_query() {
+        let query = filter.query();
+        if (*query).is_empty() {
             return Ok(all_products);
         }
-        let query = filter.query().expect("Query cannot be empty");
         self.search(all_products, &filter.product, query)
     }
 
