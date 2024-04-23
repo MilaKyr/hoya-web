@@ -8,11 +8,11 @@ mod routes;
 
 use crate::app_state::AppState;
 use crate::db::Database;
-use crate::errors::Error;
+use crate::errors::AppErrors;
 use axum::routing::{get, post};
 use axum::Router;
 
-pub fn create_app(db: Database) -> Result<(Router, AppState), Error> {
+pub fn create_app(db: Database) -> Result<(Router, AppState), AppErrors> {
     let app_state = AppState::init(db);
     let app = Router::new()
         .route("/health_check", get(routes::health_check))

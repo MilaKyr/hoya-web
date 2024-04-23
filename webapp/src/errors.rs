@@ -9,12 +9,6 @@ use thiserror::Error;
 use tracing::error;
 
 #[derive(Error, Debug)]
-pub enum Error {
-    #[error(transparent)]
-    AppError(AppErrors),
-}
-
-#[derive(Error, Debug)]
 pub enum AppErrors {
     #[error("failed parsing with: {0}")]
     ParserError(#[from] ParserError),
@@ -22,6 +16,8 @@ pub enum AppErrors {
     DatabaseError(#[from] crate::db::DatabaseError),
     #[error("transparent")]
     ConfigurationError(#[from] ConfigurationError),
+    #[error("transparent")]
+    ValidationError(#[from] validator::ValidationErrors),
 }
 
 #[derive(Error, Debug)]
@@ -39,6 +35,7 @@ pub enum ConfigurationError {
 impl IntoResponse for AppErrors {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
+            AppErrors::ValidationError(s) => (StatusCode::BAD_REQUEST, s.to_string()),
             AppErrors::ParserError(s) => (StatusCode::INTERNAL_SERVER_ERROR, s.to_string()),
             AppErrors::DatabaseError(s) => (StatusCode::INTERNAL_SERVER_ERROR, s.to_string()),
             AppErrors::ConfigurationError(s) => (StatusCode::INTERNAL_SERVER_ERROR, s.to_string()),
@@ -49,13 +46,5 @@ impl IntoResponse for AppErrors {
         }));
 
         (status, body).into_response()
-    }
-}
-
-impl IntoResponse for Error {
-    fn into_response(self) -> Response {
-        match self {
-            Error::AppError(err) => err.into_response(),
-        }
     }
 }
