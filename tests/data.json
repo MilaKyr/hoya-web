@@ -1,0 +1,75 @@
+{
+  "proxies": [],
+  "pictures": [],
+  "positions": [],
+  "shops": [
+    {"id": 0, "logo": "", "name": "shop1", "url": "www.shop1.com"},
+    {"id": 1, "logo": "", "name": "shop2", "url": "www.shop2.fi"},
+    {"id": 2, "logo": "", "name": "shop3", "url": "www.shop3.com"},
+    {"id": 3, "logo": "", "name": "shop4", "url": "www.shop4.com"},
+    {"id": 4, "logo": "", "name": "shop5", "url": "www.shop5.com"}
+  ],
+  "shops_parsing_rules": [
+        [{"id": 0, "logo": "", "name": "shop1", "url": "www.shop1.com"},
+        {"parsing_url": "https://shop1.com/products/",
+          "url_categories": ["None"],
+          "max_page_lookup": "a",
+          "product_table_lookup": "div.products",
+          "product_lookup": "div.product",
+          "name_lookup": "name",
+          "price_lookup": "price",
+          "url_lookup": "url"}],
+
+    [{"id": 2, "logo": "", "name": "shop2", "url": "www.shop2.com"},
+      {"parsing_url": "https://shop2.com/products/",
+        "url_categories": ["None"],
+        "max_page_lookup": "a",
+        "product_table_lookup": "div.products",
+        "product_lookup": "div.product",
+        "name_lookup": "name",
+        "price_lookup": "price",
+        "url_lookup": "url"}],
+
+    [{"id": 3, "logo": "", "name": "shop3", "url": "www.shop3.com"},
+      {"parsing_url": "https://shop3.com/products/",
+        "url_categories": ["None"],
+        "max_page_lookup": "a",
+        "product_table_lookup": "div.products",
+        "product_lookup": "div.product",
+        "name_lookup": "name",
+        "price_lookup": "price",
+        "url_lookup": "url",
+        "look_for_href": true,
+        "sleep_timeout_sec":  1}],
+
+    [{"id": 4, "logo": "", "name": "shop4", "url": "www.shop4.com"},
+      {"parsing_url": "https://shop4.com/products/",
+        "url_categories": ["None"],
+        "max_page_lookup": "a",
+        "product_table_lookup": "div.products",
+        "product_lookup": "div.product",
+        "name_lookup": "name",
+        "price_lookup": "price",
+        "url_lookup": "url",
+        "look_for_href": true}],
+
+    [{"id": 1, "logo": "", "name": "shop5", "url": "www.shop5.fi"},
+      {"url_categories": ["category1", "category2"],
+        "parsing_url": "https://shop5.com/products/",
+        "max_page_lookup": "a",
+        "product_table_lookup": "div.products",
+        "product_lookup": "div.product",
+        "name_lookup": "name",
+        "price_lookup": "price",
+        "url_lookup": "url",
+        "look_for_href": true}]
+  ],
+  "proxy_parsing_rules": [
+    ["https://free-proxy-list.net", {
+      "table_lookup": "table.table-striped.table-bordered",
+      "head_lookup": "tr > th",
+      "row_lookup": "tbody > tr",
+      "data_lookup": "tbody > tr > td"
+    }]
+  ]
+}
