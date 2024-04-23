@@ -195,15 +195,15 @@ impl RelationalDB {
         &self,
         filter: SearchFilter,
     ) -> Result<Vec<DatabaseProduct>, DBError> {
-        if !filter.contains_query() {
+        let query = filter.query();
+        if (*query).is_empty() {
             return self.all_products().await;
         }
-        let query = filter.query().expect("Query cannot be empty");
         let db_products = Product::find()
             .filter(
                 Condition::any()
-                    .add(entities::product::Column::Name.contains(query.to_string()))
-                    .add(entities::product::Column::Description.contains(query.to_string())),
+                    .add(entities::product::Column::Name.contains(&*query))
+                    .add(entities::product::Column::Description.contains(&*query)),
             )
             .all(&self.connection)
             .await?;

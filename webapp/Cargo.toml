@@ -33,6 +33,7 @@ time = "0.3.30"
 uuid = { version = "1.8.0", features = ["v4"] }
 chrono = "0.4.37"
 rust_decimal = "1.35.0"
+validator = { version = "0.18.1", features = ["derive"] }
 
 [dev-dependencies]
 hyper = { version = "0.14", features = ["full"] }
